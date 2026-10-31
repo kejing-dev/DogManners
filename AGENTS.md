@@ -1,0 +1,147 @@
+# Dog Manners (别盯着狗)
+
+A life-size Shiba walks up a virtual park path and reads how you stand: stare at it and it gets wary, turn sideways and
+hold still and it relaxes, sniffs you and play-bows. Six short scenes (AVMA dog-bite prevention). PICO OS 6, Kotlin,
+PICO Spatial SDK 6.1.9, package `io.embodit.dogmanners`. Skeleton C, container **STAGE_FULL** (default Stage, manifest
+`pico.spatial.stage.style=3`), window model `stage_with_attachment_panels`: P1 main panel (820 × 600 dp, left −38°),
+P2 signal tag (420 × 200 dp, follows the dog, yaw-only billboard), P3 choice / result card (650 × 500 dp, right +40°).
+No WindowContainer, no network. Optional permission: `com.picovr.permission.EYE_TRACKING` (refused → head fallback, S4).
+
+Design package (binding): `../../spatial-app-factory/apps/dog-manners/design-package.json` (states S1–S18, pressure
+model, stops, lessons, copy and `content.tone`). PRD https://claude.ai/artifact/AftooE5uEkbaK2eiqbyFNx, sample
+https://claude.ai/artifact/T8m3BpVpmCqk4XWBovM2jY. Scaffold: `pico-cli project create --sdk-type spatial --template
+stage`, then Rehearsal Hall's panel pool / trackers / glass refresh / theme, Life-size Creatures' GLB clone + measure.
+
+## Structure
+
+```
+app/src/main/java/io/embodit/dogmanners/
+  Main.kt                DefaultStage (Full) -> DogTheme -> DogScreen
+  domain/                pure Kotlin, JVM-tested (app/src/test, DomainTest)
+    Behavior.kt          Mood (3 states), Act, BodyInput, Pressure (P in [0,4]), Stops (nose-to-head distances),
+                         DogBrain (approach / wait / sniff / play / wary / shake / leave state machine)
+    BodyReader.kt        head (+ eye ray) -> facing angle, stare dwell (eyes 1.5 s / head 3 s), lean (neck pivot vs
+                         baseline), sudden, still; debug overrides (stare / lean / yaw) are applied HERE
+    Scenario.kt          one scene: L1..L6, Free, Guide, Home; choices, waits, results, goals; Snapshot for panels
+    Calibration.kt       D25: the ONE place for the dog model's offset / rotation / scale; Lineup (4 dogs)
+    Layout.kt            ParkFrame (yaw-only), placeUpright (D9 hard gate), PanelPlaces
+  platform/              DogLog (tag DogManners), Store (prefs), Sound (synthesised, -1 dBFS peak), tracking/
+                         (HeadTracker, EyeTracker), EyePermissionActivity, LaunchActivity, SpatialApplication
+  ui/
+    DogController.kt     ALL screen behaviour (events Ui.*), preferences, eye permission, exit (D26)
+    DogUiState.kt        screens + designState ("S7+S4" ...)
+    DogScreen.kt         wires controller, scene, panels; lifecycle (background pauses tracking + the dog)
+    scene/ParkScene.kt   ECS: sky, grass, path, trees, bench, props (bowl / mat / fence / owner + leash), lights,
+                         ground ring HUD + distance label, gaze light, dogs; per frame: head -> BodyReader ->
+                         Scenario -> dog movement (0.8 m hard minimum) -> clips; panel placement; logs
+    scene/DogView.kt     one dog: root (moves) -> calib (D25, never touched) -> GLB clone; clips + 0.4 s cross-fade
+    scene/PanelRig.kt    pre-built panel pool (Spatial Ruler findings)
+    components/          DogStage (SpatialView + 3 panels), Panels.kt (P1 pages, P2, P3), Strings, GlassRefresh
+    theme/               DogTheme (PicoTheme + Noto Sans / SC), DogColors, DogType
+app/src/debug/           DebugCommandReceiver + DebugCommands (QA hooks)
+app/src/main/assets/dogs dog_red.glb / dog_black_tan.glb / dog_cream.glb (built by tools/make_dog.py)
+tools/                   make_dog.py + glbkit.py (clips keyframed on the file's skeleton, coats, anim-check renders),
+                         strings_table.py (single source of copy -> res/values*/strings.xml), subset_cjk_font.py,
+                         make_icon.py + vector_render.py (icon layers, icon sheet), dev.sh
+```
+
+One direction of data: panel taps / debug hooks -> `DogController.onEvent` -> `DogUiState` -> panels. Head and eye data
+stay in the ECS frame system (`ParkScene.onFrame`) -> `BodyReader` -> `DogController.scenario.step()`; the panels only
+hear about it through `DogController.onSnapshot` when what they show changes (never per-frame through Compose).
+
+## The dog (D25)
+
+- Model: quander "Animated Dog, Shiba Inu", CC BY 4.0 (sketchfab 9abfce885a834399b2c3ccaed51cd474). No Blender on this
+  machine: `tools/make_dog.py` keyframes the clips in numpy on the file's own 191-joint rig (rotations about model axes
+  at joint pivots), writes `sit walk wary relaxed play shake sniff eat sleep`, drops the file's own clips (its
+  `shake_0` / `sitting_0` are single-frame poses; `shake_0` is "shake a paw"), forces metallic 0 + `alphaMode OPAQUE`,
+  recolours the base texture for black_tan / cream. Anim-check renders: `build/anim/anim_sheet.png`.
+- File space: +Y up, head +Z, the dog's left = +X, units ≈ cm. Calibration node: floor point between the paws -> origin,
+  identity rotation (already +Z), uniform scale so the medium dog's ear tips stand at 0.58 m. Lineup factors keep the
+  design's shoulder ratios (large 0.57 / medium 0.39 / small 0.27 / puppy 0.18 → ×1.46 / 1 / 0.69 / 0.46).
+- Runtime check: `CALIB dog=... renderFactor=... earM=... lengthM=...` and `INSTANCE dog=... heightM=...
+  opacityComponent=false` lines in the log once the first dog has played 1.5 s.
+
+## Build, run (macOS, emulator-5556 / AVD PICO_6_1_kj-mbp_2 only)
+
+```bash
+tools/dev.sh build && tools/dev.sh install && tools/dev.sh relaunch
+tools/dev.sh test                      # JVM unit tests (domain)
+tools/dev.sh log 'STATE|PLACE|CALIB|DOG |RESULT|DIST' 60
+tools/dev.sh crash
+tools/dev.sh shot NAME [DIR]           # pico-cli capture screenshot
+python3 tools/make_dog.py              # rebuild the three dog GLBs (~7 min)
+python3 tools/strings_table.py && python3 tools/subset_cjk_font.py --source ~/Slides/Assets/Fonts/NotoSansSC-Medium.ttf
+python3 tools/make_icon.py ../../spatial-app-factory/apps/dog-manners/icon.png
+```
+
+JAVA_HOME = the primer JDK 21 (`~/.pico/primer-cli/jdk/jdk-21.0.12.1+1/Contents/Home`, set by dev.sh).
+Material gate: `/usr/bin/grep -rEf ../../spatial-app-factory/bin/material-grep.txt --include='*.kt' --include='*.kts' app/src`
+must print nothing (the shell's `grep` here is ugrep and rejects that regex file).
+
+## Debug broadcast (debug builds only)
+
+`adb -s emulator-5556 shell "am broadcast -a io.embodit.dogmanners.DEBUG -p io.embodit.dogmanners --es cmd 'NAME ARGS'"`
+or `tools/dev.sh cmd 'NAME ARGS'`. Each answers `CMD NAME -> result` (tag `DogManners`); every screen change logs
+`STATE S7+S4 screen=... why=...`. Commands never write a dog state directly: body commands feed `BodyReader` /
+the pressure, so the same transitions run as with a real body.
+
+| command | effect |
+|---|---|
+| `home` `firstRun` `start` | S2 / clear prefs -> S3 / [开始] |
+| `intro L1`..`L6` / `lesson L1`..`L6` | S5 / S5 + [开始] (scene runs) |
+| `choose N` | P3 answer, 0-based (S13 -> reaction -> S14) |
+| `guide wary|relaxed|play` `free [seed]` `settings` `back` `next` `again` `bring` `quitAsk` `quitCancel` `quitYes` | `quitYes` = the confirm key's own `Ui.QuitYes` (exits the app) |
+| `stare 0|1|auto` `lean M|auto` `yaw DEG` | body inputs (yaw: turn the face, + = left; emulator heads are static). `lean M` moves the head itself M towards the dog (v0.1.1), so BodyReader measures the lean and the nose distance shrinks: `lean 0.4` at the 1.3 m stop reaches S16 |
+| `dist M` `pressure V` | put the dog's nose at M m / set P (the brain reacts on its own) |
+| `dog wary|relaxed|play` | input macros: wary = stare 1 + P 4; relaxed = stare 0, lean 0, yaw 60; play = relaxed + dist 1.3 |
+| `eye off|on` | force the head fallback (S4) |
+| `lang zh|en|system` `sound on|off` `seated 0|1` `tag on|off` `resetProgress` | prefs (S17 / S18) |
+| `view DEG` | turn the park + panels by DEG at re-placement (emulator camera cannot turn): `view -38` = P1 ahead, `view 40` = P3 ahead, `view 0` back |
+| `ftest on|off` | F↑ test texture on the ground distance label, moved 3.2 m out ×3 so a level emulator camera sees it (D10) |
+| `label TEXT|off` `dump` `where` `pose` `panels` `instances` `bounds p1|p2|p3` | screenshots / diagnostics; `bounds` logs every probed control's rect vs its panel (`BOUNDS ... inside=`) |
+
+## Screenshot list (QA, design states)
+
+`tools/qa_tour.sh OUTDIR [SHOT ...]` runs the whole list (or the named shots) and writes `OUTDIR/tour.txt` (shot -> logged
+state). Body states depend on wall-clock timing (the leave timer is 10 s), so re-run single shots when the emulator is slow.
+
+| state | how |
+|---|---|
+| S1 | relaunch, capture within 2 s |
+| S3 | `firstRun` |
+| S2 | `start` (or plain cold start after S3 once) |
+| S4 | `eye off` (any page; emulator: eyes never available -> always shows) |
+| S5 | `intro L1` … `intro L6` |
+| S6 | `lesson L1`, `dist 3.0` |
+| S7 | `lesson L1`, `dog wary` (wait ~1 s) |
+| S8 | `lesson L1`, `dog relaxed`, wait for `DOG mood=RELAXED`; sniff: `dist 1.3`, wait ~2 s |
+| S9 | `lesson L1`, `dog play`, wait ~6 s |
+| S14 | `lesson L4`, `choose 1` (wrong -> 不太对), ~4 s; L1 success: S9 + 3 s |
+| S15 | `lesson L1`, `dog wary`, wait 11 s (+2.5 s result) |
+| S16 | `lesson L1`, `dog relaxed`, wait for S8 at 1.3 m, `lean 0.4` (or `dist 0.9`) |
+| S10 | `guide wary|relaxed|play` |
+| S11 | `free 3` |
+| S12 | `settings` (`lang zh` / `lang en`) |
+| S13 | `lesson L2`..`L6` (choice card shows at once) |
+| S17 | `sound off` (footer) |
+| S18 | `lang en` + S2 / S7 / S13 / S14 |
+
+## Lenient judging (D27, v0.1.1)
+
+`domain/Leniency.kt`, one per lesson in `DogController` (kept across [再玩一次], cleared by 重置进度). A half-side face
+(>= 25°) already counts as side-on for calming and for the "侧过身" goal; held 0.5 s is enough. Close-but-not-there
+(face 10°–25°, or a lean < 0.15 m past 0.25 m) is a near miss: P1 shows an amber line ("差一点！…"); two in a row
+loosen one level (+6° face, −0.07 m lean, ×1.5 dwell; max 2), logged `LENIENT lesson=L3 near=FACE loosened=true
+level=1`; `DOG ...` lines show `facing` (raw) and `judged`. Every branch ends: L3 / L5 judge at 15 s / 12 s even while
+wary, L1 / L2 end by 60 s / 45 s. Unit tests: `app/src/test/.../SloppyTest.kt` (`sloppyNN_*` >= 10 sloppy cases,
+`endsNN_*` all-branch endings). Emulator: `view -38` turns the park 38° so the face is 38° off the dog; there
+`yaw -38` = face-on, `yaw -16` = 22°.
+
+## Platform facts found here
+
+- Emulator-5556 on kj-mbp (2026-10-31): the spatial runtime's render loop stalled (`SpatialRuntimeService Watchdog
+  lastRenderTime` frozen), the runtime was killed every ~30 s, systemui / launcher / worldspace crash-looped, every
+  launch stayed "pending" and all screenshots were black. `adb reboot` did not help; a cold start of the same AVD
+  (`-no-snapshot-load`) did — see build.log and feedback/pico-cli-feedback.md.
+- `pico-cli capture screenshot` and `adb emu screenrecord screenshot` both return the compositor output (2160 px).

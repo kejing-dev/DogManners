@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- shiba orange (design appIcon #C46B2B): not the main colour of any other factory app icon -->
+    <color name="ic_launcher_background">#FFC46B2B</color>
+</resources>
