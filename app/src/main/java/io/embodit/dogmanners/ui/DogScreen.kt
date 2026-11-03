@@ -20,6 +20,9 @@ import io.embodit.dogmanners.ui.components.localizedResources
 import io.embodit.dogmanners.ui.debug.Probe
 import io.embodit.dogmanners.ui.scene.ParkFrameSystem
 import io.embodit.dogmanners.ui.scene.ParkScene
+import io.embodit.dogmanners.ui.window.MainWindowStore
+import androidx.compose.runtime.LaunchedEffect
+import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
 
 /** The one screen: wires [DogController] (state), [ParkScene] (entities, per-frame work) and [DogStage] (panels). */
 @Composable
@@ -33,6 +36,12 @@ fun DogScreen() {
     val state by DogController.state.collectAsStateWithLifecycle()
     val scene = remember { ParkScene() }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // the main window opens with the Stage (native-window-move §3.3); [回到面前] / the chip reopen it
+    val navigator = LocalSpatialNavigator.current
+    LaunchedEffect(navigator) {
+        MainWindowStore.navigator = navigator
+        MainWindowStore.open("stage")
+    }
 
     DisposableEffect(scene, lifecycle) {
         registerSystem<ParkFrameSystem>()

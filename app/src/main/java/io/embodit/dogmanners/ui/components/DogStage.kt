@@ -18,8 +18,10 @@ import io.embodit.dogmanners.ui.scene.PanelIds
 import io.embodit.dogmanners.ui.scene.ParkScene
 
 /**
- * The Stage content (window model stage_with_attachment_panels): one full-size SpatialView holding the park and the
- * three attachment panels P1 / P2 / P3, each declared once with a fixed size; [ParkScene] parents and places them.
+ * The Stage content: one full-size SpatialView holding the park and two small attachment panels that go with the 3D
+ * content (native-window-move §6): P2, the signal tag that follows the dog, and the [打开面板] chip shown only after
+ * the main window's ×. The main panel and the choice card are the system window (ui/window/DogWindow.kt), moved by
+ * the system's own caption bar (D21); [ParkScene] parents and places these two.
  */
 @Composable
 internal fun DogStage(state: DogUiState, scene: ParkScene, onEvent: (Ui) -> Unit) {
@@ -27,9 +29,8 @@ internal fun DogStage(state: DogUiState, scene: ParkScene, onEvent: (Ui) -> Unit
     SpatialView(
         modifier = Modifier.fillMaxSize(),
         attachments = {
-            AttachmentPanel(PanelIds.MAIN) { PoolPanel(PanelIds.MAIN, scene) { inView -> MainPanel(if (inView) state else null, onEvent) } }
+            AttachmentPanel(PanelIds.CHIP) { PoolPanel(PanelIds.CHIP, scene) { inView -> OpenChip(inView, onEvent) } }
             AttachmentPanel(PanelIds.TAG) { PoolPanel(PanelIds.TAG, scene) { inView -> TagPanel(if (inView) state else null) } }
-            AttachmentPanel(PanelIds.CARD) { PoolPanel(PanelIds.CARD, scene) { inView -> CardPanel(if (inView) state else null, onEvent) } }
         },
         update = { _, attachments ->
             @Suppress("UNUSED_EXPRESSION") bindTick

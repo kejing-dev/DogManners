@@ -166,9 +166,13 @@
     <string name="sit">Seated</string>
     <string name="tag_on">Signal tag on</string>
     <string name="tag_off">Signal tag off</string>
+    <string name="birds_on">Birdsong on</string>
+    <string name="birds_off">Birdsong off</string>
+    <string name="tab_lessons">Scenes</string>
+    <string name="open_panel">Open panel</string>
     <string name="reset_progress">Reset progress</string>
     <string name="reset_done">Progress cleared</string>
-    <string name="about">About: dog model \"Animated Dog, Shiba Inu\" by quander, CC BY 4.0 (coats recoloured by us). Sources: AVMA, AKC, ASPCA.</string>
+    <string name="about">About: dog model \"Animated Dog, Shiba Inu\" by quander, CC BY 4.0 (coats recoloured by us). Owner, trees, bench and props made with Tripo; sounds made by us. Sources: AVMA, AKC, ASPCA.</string>
     <string name="about_links">avma.org/resources-tools/pet-owners/dog-bite-prevention · akc.org/expert-advice/training/how-to-read-dog-body-language · aspca.org/pet-care/dog-care/common-dog-behavior-issues/aggression</string>
     <string name="version">Version %1$s</string>
     <string name="quit">Quit app</string>

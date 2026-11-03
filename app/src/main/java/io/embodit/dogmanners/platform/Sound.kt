@@ -2,176 +2,207 @@ package io.embodit.dogmanners.platform
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.media.SoundPool
-import java.io.File
-import java.io.RandomAccessFile
+import io.embodit.dogmanners.domain.Act
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.Random
 import kotlin.math.PI
-import kotlin.math.exp
+import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
- * The app's sounds (design audio): all synthesised here at start-up (no files to license, SOURCES.md): far birds
- * (-24 dB, a chirp every few seconds), a soft pant, a fur-shake rustle, one short low "wuf" (L6 wrong answer, -12 dB),
- * a soft result chime. No growls, no barking runs. Mute is the P1 switch (remembered, D15).
+ * The app's sounds (v0.1.2, profile B12: a dog park, not birds). Files are rendered offline by tools/make_sounds.py
+ * into assets/sound (every file at -1 dBFS peak; the gains here set the loudness, same table as GAINS there):
+ *
+ * - bed: a seamless 24 s loop under everything: leaves, people talking far off, the odd far dog (AudioTrack, static).
+ * - the dog you meet, panned to where it is: paw steps on the path + collar tags while it walks, panting while it waits
+ *   or plays (mouth shut = no pant while wary), sniffing, a fur shake with the tags, one soft "wuf" when it guards the
+ *   fence (L6).
+ * - the park around you: far barks (3 dogs) and passers-by talking, every 15–45 s from a random side.
+ * - birds: decoration only, -29 dB, every 20–40 s, off with the 鸟叫 switch (remembered).
+ * Mute is the P1 switch (remembered, D15); the bed pauses with the app.
  */
 class Sound(private val context: Context) {
     private var pool: SoundPool? = null
+    private var bed: AudioTrack? = null
     private val ids = HashMap<String, Int>()
     private val rnd = Random(7)
     var on = true
+        set(v) {
+            field = v
+            applyBed()
+        }
+    var birdsOn = true
+    private var paused = false
+
+    // timers (elapsedRealtime ms)
+    private var nextStepMs = 0L
+    private var stepN = 0
+    private var nextPantMs = 0L
+    private var nextSniffMs = 0L
+    private var nextParkMs = 0L
     private var nextBirdMs = 0L
+    private var lastAct: Act? = null
+
+    /** Where the dog is for the mix: on (in the park), its act, walking, nose distance (m), pan (-1 left .. +1 right). */
+    data class DogCue(val act: Act, val moving: Boolean, val distM: Float, val pan: Float, val guarding: Boolean)
 
     fun start() {
         if (pool != null) return
-        val p = SoundPool.Builder().setMaxStreams(4).setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build()
+        val attrs = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+        val p = SoundPool.Builder().setMaxStreams(8).setAudioAttributes(attrs).build()
         pool = p
-        val dir = File(context.cacheDir, "snd").also { it.mkdirs() }
-        fun make(name: String, pcm: ShortArray) {
-            val f = File(dir, "$name.wav")
-            writeWav(f, pcm)
-            ids[name] = p.load(f.absolutePath, 1)
+        val names = runCatching { context.assets.list("sound") }.getOrNull().orEmpty().filter { it.endsWith(".wav") && it != "bed.wav" }
+        for (f in names) {
+            runCatching { context.assets.openFd("sound/$f").use { ids[f.removeSuffix(".wav")] = p.load(it, 1) } }
+                .onFailure { DogLog.e("SOUND load $f failed: $it") }
         }
-        make("bird", bird())
-        make("pant", pant())
-        make("shake", shake())
-        make("wuf", synthWuf())
-        make("chime", synthChime())
-        DogLog.i("SOUND ready ${ids.keys}")
+        bed = runCatching { loadBed(attrs) }.onFailure { DogLog.e("SOUND bed failed: $it") }.getOrNull()
+        applyBed()
+        DogLog.i("SOUND ready ${ids.keys.sorted()} bed=${bed != null} birds=$birdsOn")
     }
 
     fun release() {
+        runCatching { bed?.stop() }
+        runCatching { bed?.release() }
+        bed = null
         runCatching { pool?.release() }
         pool = null
         ids.clear()
     }
 
-    private fun play(name: String, gain: Float) {
-        if (!on) return
+    /** App to the background / back (DogScreen lifecycle via ParkScene). */
+    fun pause() {
+        paused = true
+        applyBed()
+        runCatching { pool?.autoPause() }
+    }
+
+    fun resume() {
+        paused = false
+        applyBed()
+        runCatching { pool?.autoResume() }
+    }
+
+    private fun applyBed() {
+        val b = bed ?: return
+        runCatching {
+            if (on && !paused) {
+                b.setVolume(GAIN_BED)
+                if (b.playState != AudioTrack.PLAYSTATE_PLAYING) b.play()
+            } else if (b.playState == AudioTrack.PLAYSTATE_PLAYING) b.pause()
+        }
+    }
+
+    private fun play(name: String, gain: Float, pan: Float = 0f, rate: Float = 1f) {
+        if (!on || paused) return
         val p = pool ?: return
         val id = ids[name] ?: return
-        p.play(id, gain, gain, 1, 0, 1f)
+        // equal-power pan
+        val a = (pan.coerceIn(-1f, 1f) + 1f) * (PI / 4).toFloat()
+        val l = gain * cos(a) * SQRT2
+        val r = gain * sin(a) * SQRT2
+        p.play(id, l.coerceIn(0f, 1f), r.coerceIn(0f, 1f), 1, 0, rate)
     }
 
-    fun chime() = play("chime", 0.5f)
+    fun chime() = play("chime", GAIN_CHIME)
 
-    fun wuf() = play("wuf", 0.25f) // -12 dB
-
-    fun pantOnce() = play("pant", 0.18f)
-
-    fun shakeOnce() = play("shake", 0.3f)
-
-    /** Called every frame: a far bird now and then (-24 dB). */
-    fun ambient(nowMs: Long) {
-        if (nextBirdMs == 0L) nextBirdMs = nowMs + 2500
-        if (nowMs < nextBirdMs) return
-        nextBirdMs = nowMs + 3500 + rnd.nextInt(5000)
-        play("bird", 0.063f)
+    /**
+     * Called every frame from the scene. [dog] is null outside a scene with a dog. Steps follow the walk, the pant
+     * runs while the dog waits / plays with its mouth open, the park goes on around you.
+     */
+    fun ambient(nowMs: Long, dog: DogCue?) {
+        if (nextParkMs == 0L) {
+            nextParkMs = nowMs + 6000
+            nextBirdMs = nowMs + 14000
+        }
+        if (dog != null) dogSounds(nowMs, dog)
+        if (nowMs >= nextParkMs) {
+            nextParkMs = nowMs + 15000 + rnd.nextInt(30000)
+            val side = if (rnd.nextBoolean()) -1f else 1f
+            val pan = side * (0.4f + 0.5f * rnd.nextFloat())
+            if (rnd.nextInt(3) < 2) play("bark${rnd.nextInt(3)}", GAIN_BARK * (0.7f + 0.3f * rnd.nextFloat()), pan, 0.94f + 0.12f * rnd.nextFloat())
+            else play("voices${rnd.nextInt(2)}", GAIN_VOICES, pan)
+        }
+        if (nowMs >= nextBirdMs) {
+            nextBirdMs = nowMs + 20000 + rnd.nextInt(20000)
+            if (birdsOn) play("bird", GAIN_BIRD, rnd.nextFloat() * 1.6f - 0.8f, 0.9f + 0.2f * rnd.nextFloat())
+        }
     }
 
-    // ---------------------------------------------------------------------------------------- synthesis (peak -1 dBFS)
+    private fun dogSounds(now: Long, d: DogCue) {
+        // nearer = louder (1 / distance, full level at 1.3 m), never above the file gain
+        val near = (1.3f / d.distM.coerceAtLeast(0.5f)).coerceIn(0.15f, 1f)
+        val act = d.act
+        if (act != lastAct) {
+            if (act == Act.SHAKE) play("shake", GAIN_SHAKE * near, d.pan)
+            if (act == Act.WARY && d.guarding) play("wuf", GAIN_WUF * near, d.pan)
+            if (act == Act.SNIFF) nextSniffMs = now + 300
+            lastAct = act
+        }
+        if (d.moving && now >= nextStepMs) {
+            val trot = act == Act.LEAVE || act == Act.PLAY
+            nextStepMs = now + (if (trot) 210L else 270L) + rnd.nextInt(40)
+            play("step${stepN % 4}", GAIN_STEP * near, d.pan, 0.95f + 0.1f * rnd.nextFloat())
+            if (stepN % 3 == 0) play("tags${rnd.nextInt(3)}", GAIN_TAGS * near, d.pan, 0.97f + 0.06f * rnd.nextFloat())
+            stepN++
+        }
+        val panting = act == Act.WAIT || act == Act.APPROACH || act == Act.PLAY || act == Act.SIT
+        if (panting && now >= nextPantMs) {
+            nextPantMs = now + PANT_MS + rnd.nextInt(500)
+            play("pant", GAIN_PANT * near, d.pan, 0.96f + 0.08f * rnd.nextFloat())
+        }
+        if (act == Act.SNIFF && now >= nextSniffMs) {
+            nextSniffMs = now + 1300 + rnd.nextInt(500)
+            play("sniff", GAIN_SNIFF * near, d.pan)
+        }
+    }
 
-    private fun bird(): ShortArray {
-        val sr = RATE
-        val out = FloatArray((sr * 0.55).toInt())
-        var t0 = 0
-        repeat(3) { k ->
-            val len = (sr * 0.09).toInt()
-            var ph = 0.0
-            for (i in 0 until len) {
-                val u = i.toDouble() / len
-                val f = 3200 + 1400 * sin(PI * u) + 300 * k
-                ph += 2 * PI * f / sr
-                val env = sin(PI * u)
-                if (t0 + i < out.size) out[t0 + i] += (env * sin(ph)).toFloat()
+    /** The bed loop: 16-bit mono PCM out of the WAV, looped in a static AudioTrack (no gap at the seam). */
+    private fun loadBed(attrs: AudioAttributes): AudioTrack {
+        val bytes = context.assets.open("sound/bed.wav").use { it.readBytes() }
+        val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        var off = 12
+        var rate = 32000
+        var data = 0
+        var len = 0
+        while (off + 8 <= bytes.size) {
+            val id = String(bytes, off, 4)
+            val size = bb.getInt(off + 4)
+            if (id == "fmt ") rate = bb.getInt(off + 12)
+            if (id == "data") {
+                data = off + 8
+                len = minOf(size, bytes.size - data)
+                break
             }
-            t0 += (sr * 0.15).toInt()
+            off += 8 + size + (size and 1)
         }
-        return norm(out)
-    }
-
-    private fun pant(): ShortArray {
-        val sr = RATE
-        val out = FloatArray((sr * 0.8).toInt())
-        var lp = 0f
-        for (i in out.indices) {
-            val t = i.toDouble() / sr
-            val env = (sin(2 * PI * t / 0.4).let { if (it > 0) it else 0.0 }).toFloat()
-            val n = rnd.nextFloat() * 2 - 1
-            lp += (n - lp) * 0.15f
-            out[i] = lp * env
-        }
-        return norm(out)
-    }
-
-    private fun shake(): ShortArray {
-        val sr = RATE
-        val out = FloatArray((sr * 1.1).toInt())
-        var lp = 0f
-        for (i in out.indices) {
-            val t = i.toDouble() / sr
-            val env = (sin(PI * t / 1.1) * (0.6 + 0.4 * sin(2 * PI * 8.4 * t))).toFloat()
-            val n = rnd.nextFloat() * 2 - 1
-            lp += (n - lp) * 0.35f
-            out[i] = lp * env
-        }
-        return norm(out)
-    }
-
-    private fun synthWuf(): ShortArray {
-        val sr = RATE
-        val out = FloatArray((sr * 0.22).toInt())
-        var ph = 0.0
-        var lp = 0f
-        for (i in out.indices) {
-            val t = i.toDouble() / sr
-            val f = 260 - 120 * t / 0.22
-            ph += 2 * PI * f / sr
-            val env = (1 - exp(-t * 80)) * exp(-t * 12)
-            val n = rnd.nextFloat() * 2 - 1
-            lp += (n - lp) * 0.2f
-            out[i] = ((sin(ph) + 0.35 * sin(2 * ph) + 0.4 * lp) * env).toFloat()
-        }
-        return norm(out)
-    }
-
-    private fun synthChime(): ShortArray {
-        val sr = RATE
-        val out = FloatArray((sr * 0.9).toInt())
-        for ((k, f) in listOf(880.0, 1318.5).withIndex()) {
-            val start = (k * 0.12 * sr).toInt()
-            for (i in 0 until out.size - start) {
-                val t = i.toDouble() / sr
-                out[start + i] += (sin(2 * PI * f * t) * exp(-t * 5)).toFloat()
-            }
-        }
-        return norm(out)
-    }
-
-    private fun norm(x: FloatArray): ShortArray {
-        var peak = 1e-6f
-        for (v in x) peak = maxOf(peak, kotlin.math.abs(v))
-        val k = PEAK / peak
-        return ShortArray(x.size) { (x[it] * k * 32767f).toInt().coerceIn(-32767, 32767).toShort() }
-    }
-
-    private fun writeWav(f: File, pcm: ShortArray) {
-        RandomAccessFile(f, "rw").use { r ->
-            r.setLength(0)
-            val data = pcm.size * 2
-            fun le32(v: Int) { r.write(byteArrayOf(v.toByte(), (v shr 8).toByte(), (v shr 16).toByte(), (v shr 24).toByte())) }
-            fun le16(v: Int) { r.write(byteArrayOf(v.toByte(), (v shr 8).toByte())) }
-            r.writeBytes("RIFF"); le32(36 + data); r.writeBytes("WAVEfmt "); le32(16); le16(1); le16(1); le32(RATE); le32(RATE * 2); le16(2); le16(16)
-            r.writeBytes("data"); le32(data)
-            val b = ByteArray(data)
-            for (i in pcm.indices) { b[2 * i] = pcm[i].toInt().toByte(); b[2 * i + 1] = (pcm[i].toInt() shr 8).toByte() }
-            r.write(b)
-        }
+        val pcm = bytes.copyOfRange(data, data + len)
+        val fmt = AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()
+        val t = AudioTrack.Builder().setAudioAttributes(attrs).setAudioFormat(fmt).setTransferMode(AudioTrack.MODE_STATIC).setBufferSizeInBytes(pcm.size).build()
+        t.write(pcm, 0, pcm.size)
+        t.setLoopPoints(0, pcm.size / 2, -1)
+        return t
     }
 
     companion object {
-        const val RATE = 22050
-        /** -1 dBFS */
-        const val PEAK = 0.891f
+        // playback gains, linear (tools/make_sounds.py GAINS)
+        const val GAIN_BED = 0.20f
+        const val GAIN_PANT = 0.50f
+        const val GAIN_SNIFF = 0.45f
+        const val GAIN_STEP = 0.40f
+        const val GAIN_TAGS = 0.24f
+        const val GAIN_SHAKE = 0.45f
+        const val GAIN_BARK = 0.12f
+        const val GAIN_VOICES = 0.11f
+        const val GAIN_WUF = 0.25f
+        const val GAIN_CHIME = 0.45f
+        const val GAIN_BIRD = 0.035f
+        private const val PANT_MS = 2150L
+        private val SQRT2 = sqrt(2f)
     }
 }

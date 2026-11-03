@@ -17,7 +17,10 @@ import io.embodit.dogmanners.platform.DogLog
 import io.embodit.dogmanners.platform.EyePermissionActivity
 import io.embodit.dogmanners.platform.Sound
 import io.embodit.dogmanners.platform.Store
+import io.embodit.dogmanners.ui.window.MainWindowStore
+import io.embodit.dogmanners.ui.window.exitApp
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 
 /** Everything the panels (and the debug receiver) can ask for. One path for real taps and debug commands. */
@@ -28,6 +31,8 @@ sealed interface Ui {
     data object SkipIntro : Ui
     data object Restart : Ui
     data object Back : Ui
+    /** The 小场面 page of the main window's TabBar. */
+    data object Home : Ui
     data object Next : Ui
     data class Choose(val index: Int) : Ui
     data object OpenGuide : Ui
@@ -37,7 +42,10 @@ sealed interface Ui {
     data object OpenSettings : Ui
     data class SetLang(val lang: Lang) : Ui
     data object ToggleSound : Ui
+    data object ToggleBirds : Ui
     data object Bring : Ui
+    /** The Stage chip after the main window's ×. */
+    data object OpenPanel : Ui
     data class SetSeated(val seated: Boolean) : Ui
     data object ToggleTag : Ui
     data object AskEye : Ui
@@ -85,12 +93,13 @@ object DogController {
         appContext = context.applicationContext
         val s = Store(context.applicationContext)
         store = s
-        sound = Sound(context.applicationContext).also { it.on = s.soundOn; it.start() }
+        sound = Sound(context.applicationContext).also { it.on = s.soundOn; it.birdsOn = s.birdsOn; it.start() }
         val lang = runCatching { Lang.valueOf(s.lang) }.getOrDefault(Lang.SYSTEM)
         _state.value =
             DogUiState(
                 lang = lang,
                 soundOn = s.soundOn,
+                birdsOn = s.birdsOn,
                 seated = s.seated,
                 tagOn = s.tagOn,
                 completed = s.completed,
@@ -211,6 +220,12 @@ object DogController {
                 Screen.SETTINGS -> set("back") { it.copy(screen = it.settingsFrom, quitConfirm = false) }
                 else -> goHome("back")
             }
+            // back to the scene you opened settings from (a running lesson keeps going), else home
+            Ui.Home -> when {
+                s.screen == Screen.SETTINGS && s.settingsFrom !in setOf(Screen.GUIDE, Screen.FREE) -> set("tab") { it.copy(screen = it.settingsFrom, quitConfirm = false) }
+                s.screen in setOf(Screen.GUIDE, Screen.FREE, Screen.SETTINGS) -> goHome("tab")
+                else -> Unit
+            }
             Ui.OpenGuide -> {
                 set("guide") { it.copy(screen = Screen.GUIDE, lesson = null, guideMood = Mood.WARY) }
                 startScenario(Mode.Guide(Mood.WARY))
@@ -232,7 +247,19 @@ object DogController {
                 sound?.on = on
                 set("sound") { it.copy(soundOn = on) }
             }
-            Ui.Bring -> set("bring") { it.copy(placeEpoch = it.placeEpoch + 1, backHint = false) }
+            Ui.OpenPanel -> MainWindowStore.open("chip")
+            Ui.ToggleBirds -> {
+                val on = !s.birdsOn
+                store?.birdsOn = on
+                sound?.birdsOn = on
+                set("birds") { it.copy(birdsOn = on) }
+            }
+            // the park is laid out again from where you look, and the main window is closed and opened in front of you
+            // (a system window cannot be moved by code: native-window-move §3.5)
+            Ui.Bring -> {
+                set("bring") { it.copy(placeEpoch = it.placeEpoch + 1, backHint = false) }
+                MainWindowStore.recall()
+            }
             is Ui.SetSeated -> {
                 store?.seated = e.seated
                 set("seated") { it.copy(seated = e.seated, placeEpoch = it.placeEpoch + 1) }
@@ -283,12 +310,21 @@ object DogController {
         set("eyePermission") { it.copy(eye = if (ok) EyeState.UNKNOWN else if (blocked) EyeState.DENIED else EyeState.NO_PERMISSION) }
     }
 
+    /** D26 exit, the main window template's order: release, close the window and the Stage, remove the tasks, end. */
     private fun quit() {
         DogLog.i("EXIT confirmed")
+        val nav = MainWindowStore.navigator
+        val c = appContext
+        if (nav != null && c != null) {
+            MainWindowStore.scope.launch {
+                runCatching { nav.closeWindowContainer(MainWindowStore.ID, MainWindowStore.TAG) }
+                exitApp(c, nav) { sound?.release(); sound = null }
+            }
+            return
+        }
         sound?.release()
         sound = null
-        val a = activity
-        runCatching { a?.finishAndRemoveTask() }
+        runCatching { activity?.finishAndRemoveTask() }
         main.postDelayed({ android.os.Process.killProcess(android.os.Process.myPid()) }, 300)
     }
 

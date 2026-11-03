@@ -38,10 +38,12 @@ fun rs(@StringRes id: Int, vararg args: Any): String = LocalDogResources.current
 
 /** Panel sizes (design panels[].size), dp; 0.0008 m per dp at scale 1. */
 object PanelSizes {
-    const val MAIN_W = 820f
-    const val MAIN_H = 600f
+    /** The main system window (dp): the old P1 page plus the P3 card under the coach line. */
+    const val WINDOW_W = 900f
+    const val WINDOW_H = 760f
     const val TAG_W = 420f
     const val TAG_H = 200f
-    const val CARD_W = 650f
-    const val CARD_H = 500f
+    /** Stage chip [打开面板] (shown only while the window is closed). */
+    const val CHIP_W = 300f
+    const val CHIP_H = 96f
 }

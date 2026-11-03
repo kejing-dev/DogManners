@@ -1,6 +1,7 @@
 package io.embodit.dogmanners.ui.scene
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -35,6 +36,7 @@ import io.embodit.dogmanners.domain.Mood
 import io.embodit.dogmanners.domain.PanelPlaces
 import io.embodit.dogmanners.domain.ParkFrame
 import io.embodit.dogmanners.domain.Phase
+import io.embodit.dogmanners.domain.ParkModels
 import io.embodit.dogmanners.domain.Prop
 import io.embodit.dogmanners.domain.Quat4
 import io.embodit.dogmanners.domain.Scenario
@@ -42,6 +44,7 @@ import io.embodit.dogmanners.domain.Snapshot
 import io.embodit.dogmanners.domain.Stops
 import io.embodit.dogmanners.domain.Vec3
 import io.embodit.dogmanners.platform.DogLog
+import io.embodit.dogmanners.platform.Sound
 import io.embodit.dogmanners.platform.tracking.EyeTracker
 import io.embodit.dogmanners.platform.tracking.HeadTracker
 import io.embodit.dogmanners.ui.DogController
@@ -50,6 +53,7 @@ import io.embodit.dogmanners.ui.EyeState
 import io.embodit.dogmanners.ui.Screen
 import io.embodit.dogmanners.ui.components.PanelSizes
 import io.embodit.dogmanners.ui.theme.DogColors
+import io.embodit.dogmanners.ui.window.MainWindowStore
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
@@ -79,10 +83,10 @@ class ParkFrameSystem : System() {
 }
 
 object PanelIds {
-    const val MAIN = "p1"
+    /** [打开面板] chip where P1 used to be (the main panel is the system window now). */
+    const val CHIP = "chip"
     const val TAG = "p2"
-    const val CARD = "p3"
-    val pool = listOf(MAIN, TAG, CARD)
+    val pool = listOf(CHIP, TAG)
 }
 
 /**
@@ -194,9 +198,8 @@ class ParkScene {
         stageRoot = root
         val rig = PanelRig(root) { id, shown -> panelShown[id] = shown }
         this.rig = rig
-        rig.world(PanelIds.MAIN, PanelSizes.MAIN_W, PanelSizes.MAIN_H, 1f).maxPitch = 0f
+        rig.world(PanelIds.CHIP, PanelSizes.CHIP_W, PanelSizes.CHIP_H, 1f).maxPitch = 0f
         rig.world(PanelIds.TAG, PanelSizes.TAG_W, PanelSizes.TAG_H, 1f).maxPitch = 0f
-        rig.world(PanelIds.CARD, PanelSizes.CARD_W, PanelSizes.CARD_H, 1f).maxPitch = 0f
         head.start()
         eyes.start()
         ActiveScene.current = this
@@ -240,37 +243,58 @@ class ParkScene {
         fill.components.set(DirectionalLightComponent(Color4(0.85f, 0.9f, 1f, 1f), FILL_LUX, false))
         park.addChild(fill)
         fill.setLocal(rotation = Quat4.fromTo(Vec3(0f, 0f, -1f), Vec3(0.4f, -0.5f, 0.75f).normalized()))
-        // grass and path
-        val grass = m.pbr(DogColors.Grass, 0.95f)
-        model(sh.keep(Shapes.disc("ground", 64)), grass, "ground", park).setLocal(rotation = Quat4.axisAngle(Vec3.RIGHT, -(PI / 2).toFloat()), scale = Vec3(60f, 60f, 1f))
+        val sf = Entity().named("shelf")
+        root.addChild(sf)
+        sf.enabled = false
+        shelf = sf
+        blobMesh = sh.keep(Shapes.disc("blob"))
+        blobMat = m.sheer(Color.Black, 0.35f, m.texture(ParkMaterials.radial(64, 1.2)))
+        // grass and path: painted, tileable textures (tools/make_park.py) on unit-UV tiles; plain grass beyond 20 m
+        model(sh.keep(Shapes.disc("ground", 64)), m.pbr(DogColors.Grass, 0.95f), "ground", park).setLocal(rotation = Quat4.axisAngle(Vec3.RIGHT, -(PI / 2).toFloat()), scale = Vec3(60f, 60f, 1f))
+        frameDelay()
+        val grassTex = assetTexture("park/grass.jpg")
+        val pathTex = assetTexture("park/path.jpg")
+        val grass = if (grassTex != null) m.pbrTex(grassTex, 0.95f) else m.pbr(DogColors.Grass, 0.95f)
+        model(sh.keep(tiles(-20f, 20f, -20f, 20f, 2.5f, "grassTiles")), grass, "grass", park).setLocal(position = Vec3(0f, 0.002f, 0f))
+        frameDelay()
+        val path = if (pathTex != null) m.pbrTex(pathTex, 0.9f) else m.pbr(DogColors.Path, 0.9f)
+        model(sh.keep(tiles(-0.65f, 0.65f, -27f, 3f, 1.3f, "pathTiles")), path, "path", park).setLocal(position = Vec3(0f, 0.006f, 0f))
         frameDelay()
         val cube = sh.keep(Shapes.cube("cube"))
-        val path = m.pbr(DogColors.Path, 0.9f)
-        model(cube, path, "path", park).setLocal(position = Vec3(0f, 0.005f, -12f), scale = Vec3(1.3f, 0.01f, 30f))
-        frameDelay()
-        // trees: trunk + two-tone smooth crowns, along both sides of the path (none on the dog's line)
-        val trunkMat = m.pbr(DogColors.Bark, 0.9f)
-        val leafA = m.pbr(DogColors.LeafA, 0.9f)
-        val leafB = m.pbr(DogColors.LeafB, 0.9f)
         val cyl = sh.keep(Shapes.cylinder("cyl"))
         val ball = sh.keep(Shapes.ball("ball"))
+        val trunkMat = m.pbr(DogColors.Bark, 0.9f)
+        // park models in the dog's style (Tripo, calibrated by tools/make_park.py: one root node, metres, face +Z)
+        for (pm in ParkModels.ALL) {
+            loadPropTemplate(pm)
+            frameDelay()
+        }
+        // trees along both sides of the path (none on the dog's line), linden and maple in turn
         for ((i, t) in TREES.withIndex()) {
             val tr = Entity().named("tree$i")
             park.addChild(tr)
-            tr.setLocal(position = Vec3(t.x, 0f, t.z))
-            val h = t.y
-            model(cyl, trunkMat, "trunk$i", tr).setLocal(position = Vec3(0f, h * 0.35f, 0f), scale = Vec3(0.22f, h * 0.7f, 0.22f))
-            model(ball, if (i % 2 == 0) leafA else leafB, "crown$i", tr).setLocal(position = Vec3(0f, h * 0.78f, 0f), scale = Vec3(h * 0.55f, h * 0.5f, h * 0.55f))
-            model(ball, if (i % 2 == 0) leafB else leafA, "crown2$i", tr).setLocal(position = Vec3(0.25f, h * 0.62f, 0.15f), scale = Vec3(h * 0.38f, h * 0.34f, h * 0.38f))
+            tr.setLocal(position = Vec3(t.x, 0f, t.z), rotation = Quat4.axisAngle(Vec3.UP, i * 1.7f))
+            val pm = if (i % 2 == 0) ParkModels.TREE_LINDEN else ParkModels.TREE_MAPLE
+            if (propInstance(pm, tr, "tree$i") == null) primitiveTree(tr, i, t.y, cyl, ball, trunkMat, m)
+            groundShadow(tr, 1.6f, 1.6f)
             frameDelay()
         }
-        // bench on the left, behind P1's line of sight
+        for ((i, b) in BUSHES.withIndex()) {
+            val bu = Entity().named("bush$i")
+            park.addChild(bu)
+            bu.setLocal(position = Vec3(b.x, 0f, b.z), rotation = Quat4.axisAngle(Vec3.UP, b.y))
+            if (propInstance(ParkModels.BUSH, bu, "bush$i") == null) bu.enabled = false else groundShadow(bu, 1.1f, 1.1f)
+        }
+        // bench on the left, behind the window's line of sight
         val bench = Entity().named("bench")
         park.addChild(bench)
         bench.setLocal(position = Vec3(-2.3f, 0f, -3.6f), rotation = Quat4.axisAngle(Vec3.UP, (PI / 2).toFloat()))
-        model(cube, trunkMat, "benchSeat", bench).setLocal(position = Vec3(0f, 0.45f, 0f), scale = Vec3(1.5f, 0.06f, 0.45f))
-        model(cube, trunkMat, "benchBack", bench).setLocal(position = Vec3(0f, 0.75f, -0.2f), scale = Vec3(1.5f, 0.35f, 0.05f))
-        for (sx in listOf(-0.65f, 0.65f)) model(cube, trunkMat, "benchLeg", bench).setLocal(position = Vec3(sx, 0.22f, 0f), scale = Vec3(0.07f, 0.45f, 0.4f))
+        if (propInstance(ParkModels.BENCH, bench, "bench") == null) {
+            model(cube, trunkMat, "benchSeat", bench).setLocal(position = Vec3(0f, 0.45f, 0f), scale = Vec3(1.5f, 0.06f, 0.45f))
+            model(cube, trunkMat, "benchBack", bench).setLocal(position = Vec3(0f, 0.75f, -0.2f), scale = Vec3(1.5f, 0.35f, 0.05f))
+            for (sx in listOf(-0.65f, 0.65f)) model(cube, trunkMat, "benchLeg", bench).setLocal(position = Vec3(sx, 0.22f, 0f), scale = Vec3(0.07f, 0.45f, 0.4f))
+        }
+        groundShadow(bench, 1.6f, 0.7f)
         frameDelay()
         buildProps(park, m, cube, cyl, ball, trunkMat)
         frameDelay()
@@ -279,12 +303,6 @@ class ParkScene {
         val layer = Entity().named("dogs")
         park.addChild(layer)
         dogLayer = layer
-        blobMesh = sh.keep(Shapes.disc("blob"))
-        blobMat = m.sheer(Color.Black, 0.35f, m.texture(ParkMaterials.radial(64, 1.2)))
-        val sf = Entity().named("shelf")
-        root.addChild(sf)
-        sf.enabled = false
-        shelf = sf
         built = true
         DogLog.i("SCENE built ms=${SystemClock.elapsedRealtime() - startMs}")
         // the dog every scene needs first; the rest load in the background
@@ -297,36 +315,124 @@ class ParkScene {
         // bowl (L3)
         val bowl = Entity().named("prop:bowl")
         park.addChild(bowl)
-        model(cyl, m.pbr(DogColors.Bowl, 0.35f), "bowlBody", bowl).setLocal(position = Vec3(0f, 0.035f, 0f), scale = Vec3(0.22f, 0.07f, 0.22f))
-        model(cyl, m.pbr(DogColors.Bark, 0.8f), "bowlFood", bowl).setLocal(position = Vec3(0f, 0.071f, 0f), scale = Vec3(0.17f, 0.004f, 0.17f))
+        if (propInstance(ParkModels.BOWL, bowl, "bowl") == null) {
+            model(cyl, m.pbr(DogColors.Bowl, 0.35f), "bowlBody", bowl).setLocal(position = Vec3(0f, 0.035f, 0f), scale = Vec3(0.22f, 0.07f, 0.22f))
+            model(cyl, m.pbr(DogColors.Bark, 0.8f), "bowlFood", bowl).setLocal(position = Vec3(0f, 0.071f, 0f), scale = Vec3(0.17f, 0.004f, 0.17f))
+        }
         propEntities[Prop.BOWL] = bowl
-        // dog mat (L4)
+        // dog bed (L4)
         val mat = Entity().named("prop:mat")
         park.addChild(mat)
-        model(cube, m.pbr(DogColors.Mat, 0.95f), "matPad", mat).setLocal(position = Vec3(0f, 0.015f, 0f), scale = Vec3(1.15f, 0.03f, 1.15f))
+        if (propInstance(ParkModels.BED, mat, "bed") == null) model(cube, m.pbr(DogColors.Mat, 0.95f), "matPad", mat).setLocal(position = Vec3(0f, 0.015f, 0f), scale = Vec3(1.15f, 0.03f, 1.15f))
         propEntities[Prop.MAT] = mat
-        // fence across the path, 1.2 m in front of you (L6)
+        // fence across the path, 1.2 m in front of you (L6): two sections of the one fence model side by side
         val fence = Entity().named("prop:fence")
         park.addChild(fence)
-        for (i in -4..4) model(cube, wood, "post$i", fence).setLocal(position = Vec3(i * 0.42f, 0.5f, 0f), scale = Vec3(0.07f, 1.0f, 0.07f))
-        for (y in listOf(0.35f, 0.8f)) model(cube, wood, "rail", fence).setLocal(position = Vec3(0f, y, 0.04f), scale = Vec3(3.5f, 0.07f, 0.03f))
+        val half = ParkModels.FENCE.widthM / 2f
+        val sections = listOf(-half, half).mapIndexed { k, x -> Entity().named("fence$k").also { fence.addChild(it); it.setLocal(position = Vec3(x, 0f, 0f)) } }
+        if (sections.withIndex().any { (k, e) -> propInstance(ParkModels.FENCE, e, "fence$k") == null }) {
+            for (e in sections) e.enabled = false
+            for (i in -4..4) model(cube, wood, "post$i", fence).setLocal(position = Vec3(i * 0.42f, 0.5f, 0f), scale = Vec3(0.07f, 1.0f, 0.07f))
+            for (y in listOf(0.35f, 0.8f)) model(cube, wood, "rail", fence).setLocal(position = Vec3(0f, y, 0.04f), scale = Vec3(3.5f, 0.07f, 0.03f))
+        }
         propEntities[Prop.FENCE] = fence
-        // owner (L2): a wooden figure-model style mannequin, standing still, with the leash
+        // owner (L2): a person in the dog's style standing still; the leash runs from her hand to the collar
         val o = Entity().named("prop:owner")
         park.addChild(o)
-        val wm = m.pbr(DogColors.Mannequin, 0.6f)
-        model(cyl, wm, "legL", o).setLocal(position = Vec3(-0.1f, 0.45f, 0f), scale = Vec3(0.11f, 0.9f, 0.11f))
-        model(cyl, wm, "legR", o).setLocal(position = Vec3(0.1f, 0.45f, 0f), scale = Vec3(0.11f, 0.9f, 0.11f))
-        model(ball, wm, "pelvis", o).setLocal(position = Vec3(0f, 0.95f, 0f), scale = Vec3(0.34f, 0.2f, 0.22f))
-        model(ball, wm, "torso", o).setLocal(position = Vec3(0f, 1.28f, 0f), scale = Vec3(0.38f, 0.55f, 0.24f))
-        model(ball, wm, "head", o).setLocal(position = Vec3(0f, 1.7f, 0f), scale = Vec3(0.2f, 0.25f, 0.21f))
-        model(ball, wm, "shoulders", o).setLocal(position = Vec3(0f, 1.48f, 0f), scale = Vec3(0.46f, 0.12f, 0.2f))
-        model(cyl, wm, "armL", o).setLocal(position = Vec3(-0.21f, 1.2f, 0f), rotation = Quat4.axisAngle(Vec3(0f, 0f, 1f), -0.12f), scale = Vec3(0.08f, 0.58f, 0.08f))
-        model(cyl, wm, "armR", o).setLocal(position = Vec3(0.2f, 1.22f, 0.08f), rotation = Quat4.axisAngle(Vec3.RIGHT, 0.35f), scale = Vec3(0.08f, 0.58f, 0.08f))
+        if (propInstance(ParkModels.OWNER, o, "owner") == null) {
+            val wm = m.pbr(DogColors.Mannequin, 0.6f)
+            model(cyl, wm, "legL", o).setLocal(position = Vec3(-0.1f, 0.45f, 0f), scale = Vec3(0.11f, 0.9f, 0.11f))
+            model(cyl, wm, "legR", o).setLocal(position = Vec3(0.1f, 0.45f, 0f), scale = Vec3(0.11f, 0.9f, 0.11f))
+            model(ball, wm, "torso", o).setLocal(position = Vec3(0f, 1.28f, 0f), scale = Vec3(0.38f, 0.55f, 0.24f))
+            model(ball, wm, "head", o).setLocal(position = Vec3(0f, 1.7f, 0f), scale = Vec3(0.2f, 0.25f, 0.21f))
+        }
+        groundShadow(o, 0.6f, 0.45f)
         owner = o
         propEntities[Prop.OWNER] = o
         leash = model(cube, m.pbr(DogColors.Leash, 0.6f), "leash", park).also { it.enabled = false }
         for (e in propEntities.values) e.enabled = false
+    }
+
+    /** v0.1.1's primitive tree, only as the stand-in for a missing park model (logged `MODEL ... missing`). */
+    private fun primitiveTree(tr: Entity, i: Int, h: Float, cyl: MeshResource, ball: MeshResource, trunkMat: com.pico.spatial.core.ecs.resource.Material, m: ParkMaterials) {
+        model(cyl, trunkMat, "trunk$i", tr).setLocal(position = Vec3(0f, h * 0.35f, 0f), scale = Vec3(0.22f, h * 0.7f, 0.22f))
+        model(ball, m.pbr(if (i % 2 == 0) DogColors.LeafA else DogColors.LeafB, 0.9f), "crown$i", tr).setLocal(position = Vec3(0f, h * 0.78f, 0f), scale = Vec3(h * 0.55f, h * 0.5f, h * 0.55f))
+    }
+
+    // ------------------------------------------------------------------------------------------- park models (D25)
+
+    private val propTemplates = HashMap<String, Entity>()
+    private val propInstances = ArrayList<Triple<String, Entity, Entity>>()
+
+    private suspend fun loadPropTemplate(pm: ParkModels.Model) {
+        if (propTemplates.containsKey(pm.asset)) return
+        val assets = DogController.activity?.assets
+        if (assets == null || runCatching { assets.open(pm.asset).close() }.isFailure) {
+            DogLog.w("MODEL ${pm.asset} missing: primitive stand-in")
+            return
+        }
+        val t0 = SystemClock.elapsedRealtime()
+        val e = runCatching { Entity.loadSuspend("asset://${pm.asset}") }.onFailure { DogLog.e("MODEL ${pm.asset} load failed: $it") }.getOrNull() ?: return
+        if (!attached) {
+            runCatching { e.destroy(true) }
+            return
+        }
+        shelf?.addChild(e.named("template:${pm.asset}"))
+        propTemplates[pm.asset] = e
+        DogLog.i("MODEL ${pm.asset} loaded in ${SystemClock.elapsedRealtime() - t0} ms")
+    }
+
+    /** A clone of the calibrated model under [parent] (only the parent is ever moved / turned); null if it is missing. */
+    private fun propInstance(pm: ParkModels.Model, parent: Entity, name: String): Entity? {
+        val t = propTemplates[pm.asset] ?: return null
+        val c = runCatching { t.clone(Entity.CloneOptions(recursive = true, shouldShareMaterialInstance = true)) }.getOrNull() ?: return null
+        parent.addChild(c.named("model:$name"))
+        c.enabled = true
+        propInstances += Triple("$name=${pm.asset}", c, parent)
+        return c
+    }
+
+    /** INSTANCE line of one park model clone: its height in its parent's space and whether anything made it see-through. */
+    private fun propLine(e: Entity, p: Entity): String {
+        val b = runCatching { e.getVisualBounds(p) }.getOrNull()
+        val opacity = e.components[com.pico.spatial.core.ecs.OpacityControllerComponent::class.java] != null || p.components[com.pico.spatial.core.ecs.OpacityControllerComponent::class.java] != null
+        return String.format(Locale.US, "heightM=%.3f minY=%.3f opacityComponent=%s shown=%s", (b?.halfExtent?.y ?: 0f) * 2f, (b?.center?.y ?: 0f) - (b?.halfExtent?.y ?: 0f), opacity, p.enabled)
+    }
+
+    /** Soft dark disc on the grass under a prop (the dogs have the same). */
+    private fun groundShadow(parent: Entity, w: Float, d: Float) {
+        val mesh = blobMesh ?: return
+        val mat = blobMat ?: return
+        model(mesh, mat, "shadow", parent).setLocal(position = Vec3(0f, 0.009f, 0f), rotation = Quat4.axisAngle(Vec3.RIGHT, -(PI / 2).toFloat()), scale = Vec3(w, d, 1f))
+    }
+
+    private fun assetTexture(path: String): TextureResource? {
+        val a = DogController.activity?.assets ?: return null
+        val bmp = runCatching { a.open(path).use { BitmapFactory.decodeStream(it) } }.onFailure { DogLog.w("TEXTURE $path: $it") }.getOrNull() ?: return null
+        return mats?.texture(bmp)
+    }
+
+    /** Floor tiles x0..x1 × z0..z1 of [tile] metres, each carrying the whole texture (no reliance on UV wrapping). */
+    private fun tiles(x0: Float, x1: Float, z0: Float, z1: Float, tile: Float, name: String): MeshResource {
+        val nx = kotlin.math.ceil((x1 - x0) / tile - 1e-3f).toInt().coerceAtLeast(1)
+        val nz = kotlin.math.ceil((z1 - z0) / tile - 1e-3f).toInt().coerceAtLeast(1)
+        val b = MeshBuilder(nx * nz * 4)
+        val n = Vec3.UP
+        for (i in 0 until nx) for (j in 0 until nz) {
+            val ax = x0 + i * tile
+            val bx = minOf(x1, ax + tile)
+            val az = z0 + j * tile
+            val bz = minOf(z1, az + tile)
+            val u1 = (bx - ax) / tile
+            val v1 = (bz - az) / tile
+            b.quad(
+                b.vertex(Vec3(ax, 0f, bz), n, Vector2(0f, v1)),
+                b.vertex(Vec3(bx, 0f, bz), n, Vector2(u1, v1)),
+                b.vertex(Vec3(bx, 0f, az), n, Vector2(u1, 0f)),
+                b.vertex(Vec3(ax, 0f, az), n, Vector2(0f, 0f)),
+            )
+        }
+        return b.build(name)
     }
 
     private fun buildHud(park: Entity, m: ParkMaterials) {
@@ -424,6 +530,7 @@ class ParkScene {
         paused = true
         head.stop()
         eyes.stop()
+        DogController.soundOrNull?.pause()
         DogLog.i("SCENE paused")
     }
 
@@ -433,6 +540,7 @@ class ParkScene {
         head.start()
         eyes.start()
         lastFrameMs = 0L
+        DogController.soundOrNull?.resume()
         DogLog.i("SCENE resumed")
     }
 
@@ -496,12 +604,12 @@ class ParkScene {
         rig.stowBehind(pose)
         if (!attached || paused) return
         val ui = DogController.state.value
-        DogController.soundOrNull?.ambient(now)
         if (built) {
             try {
                 stepPlacement(ui, now)
                 if (frame != null) {
                     stepScenario(ui, dt, now)
+                    stepSound(ui, now)
                     stepHud(ui, dt)
                     placePanels(ui)
                 }
@@ -527,7 +635,7 @@ class ParkScene {
         if (resettle) resettled = true
         placeEpoch = ui.placeEpoch
         eyeM = wantEye
-        val f0 = ParkFrame.around(pose, eyeM)
+        val f0 = ParkFrame.around(pose, eyeM, -PanelPlaces.P1_YAW_DEG)
         val f = if (debugViewYawDeg != 0f) ParkFrame(f0.origin, f0.yaw + Math.toRadians(debugViewYawDeg.toDouble()).toFloat()) else f0
         frame = f
         parkRoot?.let {
@@ -537,8 +645,7 @@ class ParkScene {
         reader.resetBaseline()
         if (placedAtMs < 0) placedAtMs = now
         // the panels are placed from this frame on (placePanels uses the frame)
-        rig?.get(PanelIds.MAIN)?.facePoint = f.toStage(Vec3(0f, eyeM, 0f))
-        rig?.get(PanelIds.CARD)?.facePoint = f.toStage(Vec3(0f, eyeM, 0f))
+        rig?.get(PanelIds.CHIP)?.facePoint = f.toStage(Vec3(0f, eyeM, 0f))
         DogLog.i(String.format(Locale.US, "PLACE epoch=%d head=%s yaw=%.1f pitch=%.1f eye=%.2f origin=%s hasHead=%s", placeEpoch, DogLog.pos(pose.position), Math.toDegrees(f.yaw.toDouble()), Math.toDegrees(pose.pitch.toDouble()), eyeM, DogLog.pos(f.origin), hasHead))
     }
 
@@ -717,7 +824,8 @@ class ParkScene {
         if (n3 < 0.85f) DogLog.i(String.format(Locale.US, "DIST near nose=%.3f act=%s", n3, sc.act))
         // D14: your head inside the dog -> see-through
         if (sc.act != Act.LEAVE) d.setFade(if (headInside(d, h)) 0.3f else 1f)
-        d.play(d.clipFor(sc.act, sc.mood), moving && sc.act != Act.WARY)
+        dogMoving = moving && sc.act != Act.WARY
+        d.play(d.clipFor(sc.act, sc.mood), dogMoving)
         d.apply()
         // second dog (pup) keeps still next to mom
         for (i in 1 until dogs.size) {
@@ -729,10 +837,30 @@ class ParkScene {
         val l = leash
         if (l != null && l.enabled) {
             val o = owner ?: return
-            val hand = o.transformOrNull?.position?.let { Vec3(it.x + 0.2f, 0.88f, it.z + 0.2f) } ?: return
+            val t = o.transformOrNull ?: return
+            val hand = Vec3(t.position.x, t.position.y, t.position.z) + t.quaternion.domain().rotate(ParkModels.OWNER_HAND)
             val neck = d.position + Quat4.axisAngle(Vec3.UP, d.yaw).rotate(Vec3(0f, d.size.withersM * 1.0f, d.size.noseZ * 0.55f))
             l.bar(hand, neck, 0.012f)
         }
+    }
+
+    private var dogMoving = false
+
+    /** The mix follows the dog you meet: distance and side relative to where you look (Sound.DogCue). */
+    private fun stepSound(ui: DogUiState, now: Long) {
+        val snd = DogController.soundOrNull ?: return
+        val d = dogs.firstOrNull()
+        val inScene = ui.screen == Screen.LESSON || ui.screen == Screen.FREE || ui.screen == Screen.GUIDE
+        if (d == null || !d.hasModel || !inScene || paused) {
+            snd.ambient(now, null)
+            return
+        }
+        val (h, f) = headLocal()
+        val to = Vec3(d.position.x - h.x, 0f, d.position.z - h.z)
+        val right = Vec3(-f.z, 0f, f.x)
+        val pan = if (to.length > 1e-3f && right.length > 1e-3f) to.normalized().dot(right.normalized()) else 0f
+        val sc = DogController.scenario
+        snd.ambient(now, Sound.DogCue(sc.act, dogMoving, BodyReader.flat(d.nose(), h), pan, Prop.FENCE in sc.props))
     }
 
     private fun headInside(d: DogView, h: Vec3): Boolean {
@@ -799,11 +927,13 @@ class ParkScene {
     private fun placePanels(ui: DogUiState) {
         val f = frame ?: return
         val rig = rig ?: return
-        val p1 = f.toStage(PanelPlaces.local(PanelPlaces.P1_YAW_DEG, PanelPlaces.P1_DIST_M, PanelPlaces.P1_DOWN_DEG, eyeM))
-        showAt(PanelIds.MAIN, p1)
-        val snap = ui.snap
-        val card = ui.screen == Screen.LESSON && snap != null && (snap.phase == Phase.CHOICE || snap.phase == Phase.RESULT)
-        if (card) showAt(PanelIds.CARD, f.toStage(PanelPlaces.local(PanelPlaces.P3_YAW_DEG, PanelPlaces.P3_DIST_M, PanelPlaces.P3_DOWN_DEG, eyeM))) else rig[PanelIds.CARD]?.hide()
+        // the main window is a system window (placed by the system in front of you); only its reopen chip lives here,
+        // where P1 used to be, and only while the window is closed (×)
+        if (!MainWindowStore.isOpen && MainWindowStore.state != "never") {
+            showAt(PanelIds.CHIP, f.toStage(PanelPlaces.local(PanelPlaces.P1_YAW_DEG, PanelPlaces.CHIP_DIST_M, PanelPlaces.CHIP_DOWN_DEG, eyeM)))
+        } else {
+            rig[PanelIds.CHIP]?.hide()
+        }
         val d = dogs.firstOrNull()
         val tagWanted = ui.tagOn && d != null && d.hasModel && (ui.screen == Screen.LESSON || ui.screen == Screen.FREE || ui.screen == Screen.GUIDE) && (scenario?.act != Act.LEAVE)
         if (tagWanted && d != null) {
@@ -883,6 +1013,8 @@ class ParkScene {
             val b = d.boundsInRoot()
             out += String.format(Locale.US, "INSTANCE dog=%s file=%s heightM=%.3f opacityComponent=%s clip=%s", d.name, d.lineup.asset, (b?.second?.y ?: 0f) * 2f, d.hasOpacityComponent, d.clipNow)
         }
+        // the park models: one calibration in the file (D25), so every instance of a model has the same height
+        for ((name, e, p) in propInstances) out += "INSTANCE prop=$name " + propLine(e, p)
         out.forEach { DogLog.i(it) }
         return out
     }
@@ -915,6 +1047,9 @@ class ParkScene {
         const val FENCE_M = 1.2f
 
         /** Trees: x, height, z (park-local, metres); none within 1.6 m of the path's centre line. */
+        /** Bushes: x, yaw (radians), z; along the path's edges, never on the dog's line or between you and the window. */
+        private val BUSHES = listOf(Vec3(-1.7f, 0.4f, -5.2f), Vec3(1.8f, 1.9f, -6.4f), Vec3(-1.9f, 3.1f, -9.5f), Vec3(2.0f, 0.9f, -12f), Vec3(-2.1f, 2.4f, -15f), Vec3(1.9f, 5.0f, -17.5f), Vec3(3.6f, 1.2f, -3.2f), Vec3(-4.2f, 4.4f, -6.8f))
+
         private val TREES = listOf(Vec3(-2.6f, 4.2f, -6f), Vec3(2.8f, 4.8f, -7.5f), Vec3(-3.2f, 5.2f, -11f), Vec3(3.4f, 4.4f, -13f), Vec3(-2.4f, 4.6f, -17f), Vec3(2.6f, 5.0f, -19f), Vec3(-5.5f, 5.5f, -3f), Vec3(5.8f, 5.0f, -2.5f), Vec3(-6f, 4.8f, 3.5f), Vec3(6.2f, 5.2f, 4f), Vec3(0.5f, 5.5f, 7f))
 
         fun wrap(a: Float): Float {

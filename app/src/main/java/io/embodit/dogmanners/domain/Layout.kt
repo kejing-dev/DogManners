@@ -29,9 +29,13 @@ data class ParkFrame(val origin: Vec3, val yaw: Float) {
         const val STAND_EYE_M = 1.60f
         const val SIT_EYE_M = 1.20f
 
-        /** The park around a head pose: floor = head height minus the eye height, path along the head's yaw. */
-        fun around(head: HeadPose, eyeM: Float): ParkFrame {
-            val up = placeUpright(head, 0f, 0f, 0f)
+        /**
+         * The park around a head pose: floor = head height minus the eye height, path along the head's yaw turned by
+         * [pathYawDeg] ([Yaw] convention, + = left; the app passes -PanelPlaces.P1_YAW_DEG so the window ahead of
+         * you sits left of the path).
+         */
+        fun around(head: HeadPose, eyeM: Float, pathYawDeg: Float = 0f): ParkFrame {
+            val up = placeUpright(head, pathYawDeg, 0f, 0f)
             return ParkFrame(Vec3(head.position.x, head.position.y - eyeM, head.position.z), up.yaw)
         }
     }
@@ -62,12 +66,19 @@ fun placeUpright(head: HeadPose, relYawDeg: Float, distM: Float, downDeg: Float)
 
 /** Panel placement in park-local coordinates (you at the origin, eyes at [eyeM]). */
 object PanelPlaces {
-    const val P1_YAW_DEG = 38f // left (design −38°, design sign + = right)
+    /**
+     * v0.1.2: the main window is a system window, which the system opens straight ahead of your head (≈ 1.75 m) and
+     * code cannot move (native-window-move §4). So the park turns instead: the path runs [P1_YAW_DEG] to the right of
+     * where you look when it is laid out, which keeps the design's angle between the main panel (now the window,
+     * design −38° = left of the path) and the dog, and the dog never walks between you and the window.
+     */
+    const val P1_YAW_DEG = 38f // the window, left of the path (design −38°, design sign + = right)
     const val P1_DIST_M = 1.0f
     const val P1_DOWN_DEG = 15f
-    const val P3_YAW_DEG = -40f // right
-    const val P3_DIST_M = 1.0f
-    const val P3_DOWN_DEG = 8f
+
+    /** The [打开面板] chip, where the window was, nearer and lower (only while the window is closed). */
+    const val CHIP_DIST_M = 1.1f
+    const val CHIP_DOWN_DEG = 18f
 
     /** P2 hangs at the dog's side towards your right, 0.95 m above the floor (never over its head). */
     const val P2_SIDE_M = 0.45f

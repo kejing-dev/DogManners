@@ -242,28 +242,50 @@ private fun goalText(g: Goal) =
         Goal.CHOICE -> R.string.g_choice
     }
 
-// ================================================================================================= P1 main panel
+// ================================================================================================= main window pages
+// v0.1.2 (D8 / D21): the old P1 main panel and P3 card are pages of ONE system window (ui/window/DogWindow.kt). The
+// window brings its own glass and 32 dp corners, so these pages draw no background of their own.
 
 @Composable
-internal fun MainPanel(state: DogUiState?, onEvent: (Ui) -> Unit) {
-    Glass(PanelSizes.MAIN_W, PanelSizes.MAIN_H) {
-        if (state == null) return@Glass
-        Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            val showEye = state.eye != EyeState.ON && state.eye != EyeState.UNKNOWN && state.screen !in setOf(Screen.STARTING, Screen.DISCLAIMER, Screen.SETTINGS)
-            if (showEye) EyeBar(state, onEvent)
-            Box(Modifier.fillMaxWidth().weight(1f)) {
-                when (state.screen) {
-                    Screen.STARTING -> Starting()
-                    Screen.DISCLAIMER -> Disclaimer(onEvent)
-                    Screen.HOME -> Home(state, onEvent)
-                    Screen.INTRO -> Intro(state, onEvent)
-                    Screen.LESSON -> Lesson(state, onEvent)
-                    Screen.GUIDE -> Guide(state, onEvent)
-                    Screen.FREE -> Free(state, onEvent)
-                    Screen.SETTINGS -> Settings(state, onEvent)
-                }
-            }
-            if (state.screen !in setOf(Screen.STARTING, Screen.DISCLAIMER, Screen.SETTINGS)) Footer(state, onEvent)
+private fun WindowPage(state: DogUiState, onEvent: (Ui) -> Unit, footer: Boolean = true, content: @Composable () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val showEye = state.eye != EyeState.ON && state.eye != EyeState.UNKNOWN && state.screen !in setOf(Screen.STARTING, Screen.DISCLAIMER, Screen.SETTINGS)
+        if (showEye) EyeBar(state, onEvent)
+        Box(Modifier.fillMaxWidth().weight(1f)) { content() }
+        if (footer) Footer(state, onEvent)
+    }
+}
+
+/** 小场面: start-up, disclaimer, home, intro, the running lesson with its choice / result card. */
+@Composable
+internal fun LessonsPage(state: DogUiState, onEvent: (Ui) -> Unit) {
+    WindowPage(state, onEvent, footer = state.screen !in setOf(Screen.STARTING, Screen.DISCLAIMER)) {
+        when (state.screen) {
+            Screen.STARTING -> Starting()
+            Screen.DISCLAIMER -> Disclaimer(onEvent)
+            Screen.INTRO -> Intro(state, onEvent)
+            Screen.LESSON -> Lesson(state, onEvent)
+            else -> Home(state, onEvent)
+        }
+    }
+}
+
+@Composable
+internal fun GuidePage(state: DogUiState, onEvent: (Ui) -> Unit) = WindowPage(state, onEvent) { Guide(state, onEvent) }
+
+@Composable
+internal fun FreePage(state: DogUiState, onEvent: (Ui) -> Unit) = WindowPage(state, onEvent) { Free(state, onEvent) }
+
+@Composable
+internal fun SettingsPageContent(state: DogUiState, onEvent: (Ui) -> Unit) = Settings(state, onEvent)
+
+/** Stage chip that opens the main window again after its × (native-window-move §3.3); shown only while it is closed. */
+@Composable
+internal fun OpenChip(shown: Boolean, onEvent: (Ui) -> Unit) {
+    Glass(PanelSizes.CHIP_W, PanelSizes.CHIP_H, padding = 16) {
+        if (!shown) return@Glass
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Key(rs(R.string.open_panel), "open_panel", icon = R.drawable.ic_home, primary = true, height = 56.dp) { onEvent(Ui.OpenPanel) }
         }
     }
 }
@@ -301,7 +323,6 @@ private fun Footer(state: DogUiState, onEvent: (Ui) -> Unit) {
         Spacer(Modifier.weight(1f))
         Key(rs(if (state.soundOn) R.string.sound_on else R.string.sound_off), "sound", icon = if (state.soundOn) R.drawable.ic_volume_up else R.drawable.ic_volume_off) { onEvent(Ui.ToggleSound) }
         Key(rs(R.string.bring), "bring", icon = R.drawable.ic_recenter) { onEvent(Ui.Bring) }
-        Key(rs(R.string.settings), "settings", icon = R.drawable.ic_settings) { onEvent(Ui.OpenSettings) }
     }
 }
 
@@ -351,10 +372,7 @@ private fun Disclaimer(onEvent: (Ui) -> Unit) {
 @Composable
 private fun Home(state: DogUiState, onEvent: (Ui) -> Unit) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Title(rs(R.string.app_name)) {
-            Key(rs(R.string.guide), "guide", icon = R.drawable.ic_menu_book, height = 48.dp) { onEvent(Ui.OpenGuide) }
-            Key(rs(R.string.free), "free", icon = R.drawable.ic_paw, height = 48.dp) { onEvent(Ui.OpenFree) }
-        }
+        Title(rs(R.string.app_name))
         Body(rs(R.string.home_one), maxLines = 2)
         Spacer(Modifier.height(2.dp))
         for (id in LessonId.entries) LessonRow(id, id.n in state.completed) { onEvent(Ui.OpenLesson(id)) }
@@ -439,6 +457,14 @@ private fun Goals(goals: List<Pair<Goal, Boolean>>) {
 private fun Lesson(state: DogUiState, onEvent: (Ui) -> Unit) {
     val id = state.lesson ?: return
     val snap = state.snap
+    // the old P3 card, inside the same window (D8): result replaces the page, a choice goes under the coach line
+    if (snap != null && snap.phase == Phase.RESULT && snap.outcome != null) {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Title(rs(R.string.lesson_n, id.n) + " · " + rs(lessonName(id)))
+            Box(Modifier.fillMaxWidth().weight(1f)) { Result(id, snap, onEvent) }
+        }
+        return
+    }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Title(rs(R.string.lesson_n, id.n) + " · " + rs(lessonName(id)))
         val c = snap?.coach?.let { coachText(it) }
@@ -451,8 +477,9 @@ private fun Lesson(state: DogUiState, onEvent: (Ui) -> Unit) {
         if (snap?.waitLeftS != null) Note("⏱ ${snap.waitLeftS} s", maxLines = 1)
         if (snap?.hint == true && snap.phase == Phase.CHOICE) Note(rs(R.string.choice_hint), maxLines = 1)
         snap?.near?.let { NearHint(it) }
+        if (snap?.phase == Phase.CHOICE) Choice(id, onEvent)
         Spacer(Modifier.weight(1f))
-        if (snap != null && snap.goals.isNotEmpty()) Goals(snap.goals)
+        if (snap != null && snap.goals.isNotEmpty() && snap.phase != Phase.CHOICE) Goals(snap.goals)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Key(rs(R.string.back), "lesson_back", icon = R.drawable.ic_chevron_left) { onEvent(Ui.Back) }
             Key(rs(R.string.restart), "restart", icon = R.drawable.ic_refresh) { onEvent(Ui.Restart) }
@@ -517,6 +544,12 @@ private fun Settings(state: DogUiState, onEvent: (Ui) -> Unit) {
             Spacer(Modifier.weight(1f))
             Text(text = rs(if (state.soundOn) R.string.sound_on else R.string.sound_off), style = DogType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1)
             Switch(checked = state.soundOn, onCheckedChange = { onEvent(Ui.ToggleSound) }, modifier = Modifier.probe("sound_switch"))
+        }
+        // v0.1.2 (B12): far birds are decoration only, here is their switch
+        Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Spacer(Modifier.weight(1f))
+            Text(text = rs(if (state.birdsOn) R.string.birds_on else R.string.birds_off), style = DogType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1)
+            Switch(checked = state.birdsOn, onCheckedChange = { onEvent(Ui.ToggleBirds) }, modifier = Modifier.probe("birds_switch"))
         }
         Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             val on = state.eye == EyeState.ON
@@ -585,23 +618,12 @@ private fun Signal(icon: Int, label: String, value: String, modifier: Modifier) 
     }
 }
 
-// ================================================================================================= P3 choice / result
-
-@Composable
-internal fun CardPanel(state: DogUiState?, onEvent: (Ui) -> Unit) {
-    Glass(PanelSizes.CARD_W, PanelSizes.CARD_H, padding = 28) {
-        if (state == null) return@Glass
-        val id = state.lesson ?: return@Glass
-        val snap = state.snap ?: return@Glass
-        if (snap.phase == Phase.RESULT && snap.outcome != null) Result(id, snap, onEvent) else Choice(id, onEvent)
-    }
-}
+// ================================================================================================= choice / result (in the lesson page)
 
 @Composable
 private fun Choice(id: LessonId, onEvent: (Ui) -> Unit) {
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(text = rs(question(id)), style = DogType.heading, color = PicoTheme.colorScheme.labelPrimary, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(4.dp))
         choices(id).forEachIndexed { i, c ->
             Button(
                 onClick = { onEvent(Ui.Choose(i)) },

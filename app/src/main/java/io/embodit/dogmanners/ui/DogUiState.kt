@@ -24,6 +24,7 @@ data class DogUiState(
     val eyeAsked: Boolean = false,
     val lang: Lang = Lang.SYSTEM,
     val soundOn: Boolean = true,
+    val birdsOn: Boolean = true,
     val seated: Boolean = false,
     val tagOn: Boolean = true,
     val completed: Set<Int> = emptySet(),

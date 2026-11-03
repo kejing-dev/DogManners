@@ -101,6 +101,22 @@ internal class ParkMaterials(private val shared: SharedResources) {
             }
         )
 
+    /** Textured PBR (the painted grass / path): the texture as base colour and, at the ambient share, as emission. */
+    fun pbrTex(texture: TextureResource, roughness: Float = 0.9f): PhysicallyBasedMaterial =
+        shared.keep(
+            PhysicallyBasedMaterial.create(BlendingMode.OPAQUE).apply {
+                setBaseColor(Color4(1f, 1f, 1f, 1f))
+                setBaseColorTexture(texture)
+                setMetallic(0f)
+                setRoughness(roughness)
+                runCatching {
+                    setEmissiveColor(Color4(AMBIENT, AMBIENT, AMBIENT, 1f))
+                    setEmissiveTexture(texture)
+                }
+                setCullingMode(MaterialCullingMode.NONE)
+            }
+        )
+
     fun unlit(color: Color, texture: TextureResource? = null): UnlitMaterial =
         shared.keep(
             UnlitMaterial.create(BlendingMode.OPAQUE).apply {

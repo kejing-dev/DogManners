@@ -190,10 +190,16 @@ S = [
     ("sit", "坐着", "Seated"),
     ("tag_on", "信号牌 开", "Signal tag on"),
     ("tag_off", "信号牌 关", "Signal tag off"),
+    # v0.1.2: birds are decoration only (profile B12), one switch
+    ("birds_on", "鸟叫 开", "Birdsong on"),
+    ("birds_off", "鸟叫 关", "Birdsong off"),
+    # v0.1.2 main window (D8 / D21): system TabBar pages + the chip that opens the window again
+    ("tab_lessons", "小场面", "Scenes"),
+    ("open_panel", "打开面板", "Open panel"),
     ("reset_progress", "重置进度", "Reset progress"),
     ("reset_done", "进度清空了", "Progress cleared"),
-    ("about", "关于：狗模型「Animated Dog, Shiba Inu」by quander，CC BY 4.0（毛色是我们改的）。行为建议出处：AVMA、AKC、ASPCA。",
-     "About: dog model \"Animated Dog, Shiba Inu\" by quander, CC BY 4.0 (coats recoloured by us). Sources: AVMA, AKC, ASPCA."),
+    ("about", "关于：狗模型「Animated Dog, Shiba Inu」by quander，CC BY 4.0（毛色是我们改的）。主人、树、长椅等用 Tripo 生成，声音是我们合成的。行为建议出处：AVMA、AKC、ASPCA。",
+     "About: dog model \"Animated Dog, Shiba Inu\" by quander, CC BY 4.0 (coats recoloured by us). Owner, trees, bench and props made with Tripo; sounds made by us. Sources: AVMA, AKC, ASPCA."),
     ("about_links", "avma.org/resources-tools/pet-owners/dog-bite-prevention · akc.org/expert-advice/training/how-to-read-dog-body-language · aspca.org/pet-care/dog-care/common-dog-behavior-issues/aggression",
      "avma.org/resources-tools/pet-owners/dog-bite-prevention · akc.org/expert-advice/training/how-to-read-dog-body-language · aspca.org/pet-care/dog-care/common-dog-behavior-issues/aggression"),
     ("version", "版本 %1$s", "Version %1$s"),

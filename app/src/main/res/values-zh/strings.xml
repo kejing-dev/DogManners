@@ -166,9 +166,13 @@
     <string name="sit">坐着</string>
     <string name="tag_on">信号牌 开</string>
     <string name="tag_off">信号牌 关</string>
+    <string name="birds_on">鸟叫 开</string>
+    <string name="birds_off">鸟叫 关</string>
+    <string name="tab_lessons">小场面</string>
+    <string name="open_panel">打开面板</string>
     <string name="reset_progress">重置进度</string>
     <string name="reset_done">进度清空了</string>
-    <string name="about">关于：狗模型「Animated Dog, Shiba Inu」by quander，CC BY 4.0（毛色是我们改的）。行为建议出处：AVMA、AKC、ASPCA。</string>
+    <string name="about">关于：狗模型「Animated Dog, Shiba Inu」by quander，CC BY 4.0（毛色是我们改的）。主人、树、长椅等用 Tripo 生成，声音是我们合成的。行为建议出处：AVMA、AKC、ASPCA。</string>
     <string name="about_links">avma.org/resources-tools/pet-owners/dog-bite-prevention · akc.org/expert-advice/training/how-to-read-dog-body-language · aspca.org/pet-care/dog-care/common-dog-behavior-issues/aggression</string>
     <string name="version">版本 %1$s</string>
     <string name="quit">退出应用</string>
