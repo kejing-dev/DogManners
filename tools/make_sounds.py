@@ -1,4 +1,4 @@
-"""Offline sound design for Dog Manners (v0.1.2): the park is about dogs, not birds (profile B12).
+"""Offline sound design for Dog Manners. v0.1.3 (profile B24): only the dog you meet, near-field; no ambience.
 
 Everything is synthesised here (no recordings to license) and written to app/src/main/assets/sound/*.wav
 (32 kHz mono 16-bit, every file normalised to -1 dBFS peak; loudness is set by the playback gains in
@@ -6,9 +6,9 @@ platform/Sound.kt, mirrored in GAINS below). A QA mix of a dog walking up the pa
 
   python tools/make_sounds.py [QA_DIR]     # QA_DIR default ../spatial-app-factory/apps/dog-manners/qa
 
-Sounds: park bed loop (leaves + far people talking + far dogs), pant, sniff, paw steps on the path (4), collar
-tags / bell (3), fur shake (with the tags), far barks (3 dogs), passers-by talking (2), soft near "wuf" (L6),
-result chime, a far bird (decoration only, off with the 鸟叫 switch).
+Sounds written: pant, sniff, paw steps on the path (4), collar tags / bell (3), fur shake (with the tags), soft near
+"wuf" (L6), result chime. v0.1.2's park bed loop, far barks, passers-by and bird are still rendered (so the random
+sequence, and with it every dog file, stays the same) but no longer written: headset 2026-11-04 "不需要环境背景音".
 """
 import os
 import sys
@@ -25,9 +25,10 @@ OUT = os.path.join(HERE, "..", "app", "src", "main", "assets", "sound")
 
 # playback gains used by platform/Sound.kt (linear, applied to the -1 dBFS files)
 GAINS = {
-    "bed": 0.20, "pant": 0.50, "sniff": 0.45, "step": 0.40, "tags": 0.24, "shake": 0.45, "bark": 0.12,
-    "voices": 0.11, "wuf": 0.25, "chime": 0.45, "bird": 0.035,
+    "pant": 0.35, "sniff": 0.32, "step": 0.28, "tags": 0.17, "shake": 0.32, "wuf": 0.18, "chime": 0.32,
 }
+# v0.1.2's ambience, rendered for the random sequence only (see the docstring)
+DROPPED = {"bed", "bark0", "bark1", "bark2", "voices0", "voices1", "bird"}
 
 
 # ------------------------------------------------------------------------------------------------- helpers
@@ -458,20 +459,17 @@ def build():
     s["wuf"] = near_wuf()
     s["chime"] = chime()
     s["bird"] = far_bird()
-    return {k: norm(v) for k, v in s.items()}
+    return {k: norm(v) for k, v in s.items() if k not in DROPPED}
 
 
 def group(name):
     return "".join(c for c in name if not c.isdigit())
 
 
-def qa_mix(snd, birds=True, dur=32.0):
-    """A dog walks up the path, waits panting, sniffs, shakes; the park goes on around you (app gains)."""
+def qa_mix(snd, dur=32.0):
+    """A dog walks up the path, waits panting, sniffs, shakes; nothing else (app gains)."""
     n = secs(dur)
     mix = np.zeros(n + SR)
-    bed = snd["bed"]
-    reps = int(np.ceil(n / len(bed))) + 1
-    mix[: n] += np.tile(bed, reps)[:n] * GAINS["bed"]
     # walk in: 0..9 s, trot steps getting louder (1/d) as it comes from 8 m to 1.3 m
     t = 0.4
     k = 0
@@ -495,12 +493,6 @@ def qa_mix(snd, birds=True, dur=32.0):
     while t < dur:
         put(mix, t, snd["pant"], GAINS["pant"])
         t += len(snd["pant"]) / SR + 0.3
-    put(mix, 6.5, snd["bark0"], GAINS["bark"])
-    put(mix, 17.0, snd["voices0"], GAINS["voices"])
-    put(mix, 27.5, snd["bark2"], GAINS["bark"])
-    if birds:
-        put(mix, 13.0, snd["bird"], GAINS["bird"])
-        put(mix, 29.0, snd["bird"], GAINS["bird"])
     put(mix, 30.5, snd["chime"], GAINS["chime"])
     return mix[:n]
 
@@ -529,20 +521,18 @@ def main():
         g = GAINS[group(k)]
         rows.append((k, len(v) / SR, db(np.max(np.abs(v))), db(np.sqrt(np.mean(v ** 2))), db(g), db(np.max(np.abs(v)) * g), db(np.sqrt(np.mean(v ** 2)) * g)))
     os.makedirs(qa, exist_ok=True)
-    for birds, name in ((True, "ambience-v012-walkup.wav"), (False, "ambience-v012-walkup-birds-off.wav")):
-        m = qa_mix(snd, birds)
-        p = db(np.max(np.abs(m)))
-        if p > -1:
-            m *= PEAK / np.max(np.abs(m))
-        write(os.path.join(qa, name), m)
-        rows.append((name, len(m) / SR, db(np.max(np.abs(m))), db(np.sqrt(np.mean(m ** 2))), 0, db(np.max(np.abs(m))), db(np.sqrt(np.mean(m ** 2)))))
-        if birds:
-            spectrogram_png(m, os.path.join(qa, "ambience-v012-walkup-spectrogram.png"), "v0.1.2 walk-up mix: steps+tags 0-9 s, pant 9-20 s, sniff 20-22 s, shake 24 s, far barks 6.5 / 27.5 s, voices 17 s")
-    sd = os.path.join(qa, "sounds-v012")
+    name = "dog-v013-walkup.wav"
+    m = qa_mix(snd)
+    if db(np.max(np.abs(m))) > -1:
+        m *= PEAK / np.max(np.abs(m))
+    write(os.path.join(qa, name), m)
+    rows.append((name, len(m) / SR, db(np.max(np.abs(m))), db(np.sqrt(np.mean(m ** 2))), 0, db(np.max(np.abs(m))), db(np.sqrt(np.mean(m ** 2)))))
+    spectrogram_png(m, os.path.join(qa, "dog-v013-walkup-spectrogram.png"), "v0.1.3 walk-up mix, dog only: steps+tags 0-9 s, pant 9-20 s, sniff 20-22 s, shake 24 s, chime 30.5 s")
+    sd = os.path.join(qa, "sounds-v013")
     os.makedirs(sd, exist_ok=True)
     for k, v in snd.items():
         write(os.path.join(sd, f"{k}.wav"), v)
-    with open(os.path.join(qa, "sounds-v012.md"), "w", encoding="utf-8") as fh:
+    with open(os.path.join(qa, "sounds-v013.md"), "w", encoding="utf-8") as fh:
         fh.write("| sound | s | file peak dBFS | file RMS dBFS | app gain dB | played peak dBFS | played RMS dBFS |\n|---|---|---|---|---|---|---|\n")
         for r in rows:
             fh.write(f"| {r[0]} | {r[1]:.2f} | {r[2]:.1f} | {r[3]:.1f} | {r[4]:.1f} | {r[5]:.1f} | {r[6]:.1f} |\n")

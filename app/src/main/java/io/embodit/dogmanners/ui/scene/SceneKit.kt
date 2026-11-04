@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.ui.graphics.Color
 import com.pico.spatial.core.ecs.BoundingBox
 import com.pico.spatial.core.ecs.Entity
+import com.pico.spatial.core.ecs.GroundShadowComponent
 import com.pico.spatial.core.ecs.ModelComponent
 import com.pico.spatial.core.ecs.ModelEntity
 import com.pico.spatial.core.ecs.OpacityControllerComponent
@@ -57,6 +58,12 @@ internal fun Entity.setMaterial(material: Material) {
     components[ModelComponent::class.java]?.materials?.set(0, material)
 }
 
+/** Ground (contact) shadow on this entity and every descendant: the component does not propagate to children. */
+internal fun Entity.groundShadow(casts: Boolean, receives: Boolean) {
+    components.set(GroundShadowComponent(casts, receives))
+    for (c in getChildren()) c.groundShadow(casts, receives)
+}
+
 /** Overall opacity of an entity and its children. */
 internal fun Entity.setOpacity(opacity: Float) {
     val existing = components[OpacityControllerComponent::class.java]
@@ -87,7 +94,10 @@ internal class SharedResources {
     }
 }
 
-/** Materials of the park: PBR for the props (lit by the sun and the fill), Unlit for the sky and the overlays. */
+/**
+ * Materials of the park: PBR for everything that stands in the park (lit by the sun + the park IBL, v0.1.3 B24; no
+ * emission), Unlit only for the sky dome and the overlays (ring, labels, gaze light).
+ */
 internal class ParkMaterials(private val shared: SharedResources) {
     fun pbr(color: Color, roughness: Float = 0.85f): PhysicallyBasedMaterial =
         shared.keep(
@@ -95,13 +105,11 @@ internal class ParkMaterials(private val shared: SharedResources) {
                 setBaseColor(color.copy(alpha = 1f).color4())
                 setMetallic(0f)
                 setRoughness(roughness)
-                // Full Stage has no sky light: a share of the base colour as emission stands in for ambient light
-                runCatching { setEmissiveColor(Color4(color.red * AMBIENT, color.green * AMBIENT, color.blue * AMBIENT, 1f)) }
                 setCullingMode(MaterialCullingMode.NONE)
             }
         )
 
-    /** Textured PBR (the painted grass / path): the texture as base colour and, at the ambient share, as emission. */
+    /** Textured PBR (the painted grass / path): the texture as base colour. */
     fun pbrTex(texture: TextureResource, roughness: Float = 0.9f): PhysicallyBasedMaterial =
         shared.keep(
             PhysicallyBasedMaterial.create(BlendingMode.OPAQUE).apply {
@@ -109,10 +117,6 @@ internal class ParkMaterials(private val shared: SharedResources) {
                 setBaseColorTexture(texture)
                 setMetallic(0f)
                 setRoughness(roughness)
-                runCatching {
-                    setEmissiveColor(Color4(AMBIENT, AMBIENT, AMBIENT, 1f))
-                    setEmissiveTexture(texture)
-                }
                 setCullingMode(MaterialCullingMode.NONE)
             }
         )
@@ -142,9 +146,7 @@ internal class ParkMaterials(private val shared: SharedResources) {
     fun texture(bitmap: Bitmap): TextureResource = shared.keep(TextureResource.create(flipV(bitmap)))
 
     companion object {
-        private const val AMBIENT = 0.38f
-
-        /** White disc fading to transparent towards the rim (gaze light, shadow blobs). */
+        /** White disc fading to transparent towards the rim (gaze light). */
         fun radial(size: Int = 128, power: Double = 1.6): Bitmap {
             val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val c = (size - 1) / 2f

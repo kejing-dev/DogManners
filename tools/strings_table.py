@@ -190,12 +190,12 @@ S = [
     ("sit", "坐着", "Seated"),
     ("tag_on", "信号牌 开", "Signal tag on"),
     ("tag_off", "信号牌 关", "Signal tag off"),
-    # v0.1.2: birds are decoration only (profile B12), one switch
-    ("birds_on", "鸟叫 开", "Birdsong on"),
-    ("birds_off", "鸟叫 关", "Birdsong off"),
     # v0.1.2 main window (D8 / D21): system TabBar pages + the chip that opens the window again
     ("tab_lessons", "小场面", "Scenes"),
     ("open_panel", "打开面板", "Open panel"),
+    # v0.1.3 (D9): the window opens only once your head is level
+    ("level_hint", "平视前方", "Look straight ahead"),
+    ("level_hint_sub", "面板就出来", "and the panel opens"),
     ("reset_progress", "重置进度", "Reset progress"),
     ("reset_done", "进度清空了", "Progress cleared"),
     ("about", "关于：狗模型「Animated Dog, Shiba Inu」by quander，CC BY 4.0（毛色是我们改的）。主人、树、长椅等用 Tripo 生成，声音是我们合成的。行为建议出处：AVMA、AKC、ASPCA。",

@@ -22,11 +22,6 @@ class Store(context: Context) {
         get() = p.getBoolean("sound", true)
         set(v) = p.edit().putBoolean("sound", v).apply()
 
-    /** v0.1.2: far birds are decoration only (profile B12), on by default, remembered. */
-    var birdsOn: Boolean
-        get() = p.getBoolean("birds", true)
-        set(v) = p.edit().putBoolean("birds", v).apply()
-
     var seated: Boolean
         get() = p.getBoolean("seated", false)
         set(v) = p.edit().putBoolean("seated", v).apply()

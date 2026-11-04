@@ -58,6 +58,7 @@ import io.embodit.dogmanners.ui.Ui
 import io.embodit.dogmanners.ui.debug.probe
 import io.embodit.dogmanners.ui.theme.DogColors
 import io.embodit.dogmanners.ui.theme.DogType
+import io.embodit.dogmanners.ui.window.MainWindowStore
 
 private val GlassShape = RoundedCornerShape(28.dp)
 
@@ -279,11 +280,21 @@ internal fun FreePage(state: DogUiState, onEvent: (Ui) -> Unit) = WindowPage(sta
 @Composable
 internal fun SettingsPageContent(state: DogUiState, onEvent: (Ui) -> Unit) = Settings(state, onEvent)
 
-/** Stage chip that opens the main window again after its × (native-window-move §3.3); shown only while it is closed. */
+/**
+ * Stage chip that opens the main window again after its × (native-window-move §3.3); shown only while it is closed.
+ * v0.1.3 (D9): while an open waits for a level head, the same slot says 「平视前方 / 面板就出来」 on your line of sight.
+ */
 @Composable
 internal fun OpenChip(shown: Boolean, onEvent: (Ui) -> Unit) {
     Glass(PanelSizes.CHIP_W, PanelSizes.CHIP_H, padding = 16) {
         if (!shown) return@Glass
+        if (MainWindowStore.levelHint) {
+            Column(Modifier.fillMaxSize().probe("level_hint"), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(text = rs(R.string.level_hint), style = DogType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1)
+                Text(text = rs(R.string.level_hint_sub), style = DogType.note, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1)
+            }
+            return@Glass
+        }
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Key(rs(R.string.open_panel), "open_panel", icon = R.drawable.ic_home, primary = true, height = 56.dp) { onEvent(Ui.OpenPanel) }
         }
@@ -491,6 +502,7 @@ private fun Lesson(state: DogUiState, onEvent: (Ui) -> Unit) {
 private fun Guide(state: DogUiState, onEvent: (Ui) -> Unit) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Title(rs(R.string.guide)) { Key(rs(R.string.back), "guide_back", icon = R.drawable.ic_chevron_left, height = 48.dp) { onEvent(Ui.Back) } }
+        // gate:allow tabs-segment 狗语小词典页里切示范狗的三种情绪（同一页切选项，页面不变；切页面是系统 TabBar）
         Segments(listOf(Mood.WARY to rs(R.string.tag_wary), Mood.RELAXED to rs(R.string.tag_relaxed), Mood.PLAY to rs(R.string.tag_play)), state.guideMood, "mood", 200) { onEvent(Ui.GuideMood(it)) }
         Note(rs(R.string.guide_note), maxLines = 1)
         Text(text = rs(R.string.early_title), style = DogType.heading, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1)
@@ -544,12 +556,6 @@ private fun Settings(state: DogUiState, onEvent: (Ui) -> Unit) {
             Spacer(Modifier.weight(1f))
             Text(text = rs(if (state.soundOn) R.string.sound_on else R.string.sound_off), style = DogType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1)
             Switch(checked = state.soundOn, onCheckedChange = { onEvent(Ui.ToggleSound) }, modifier = Modifier.probe("sound_switch"))
-        }
-        // v0.1.2 (B12): far birds are decoration only, here is their switch
-        Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Spacer(Modifier.weight(1f))
-            Text(text = rs(if (state.birdsOn) R.string.birds_on else R.string.birds_off), style = DogType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1)
-            Switch(checked = state.birdsOn, onCheckedChange = { onEvent(Ui.ToggleBirds) }, modifier = Modifier.probe("birds_switch"))
         }
         Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             val on = state.eye == EyeState.ON

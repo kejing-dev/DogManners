@@ -2,6 +2,7 @@ package io.embodit.dogmanners.ui.window
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -15,6 +16,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pico.spatial.ui.platform.containers.SpatialNavigator
 import io.embodit.dogmanners.R
+import io.embodit.dogmanners.domain.LevelGate
 import io.embodit.dogmanners.platform.DogLog
 import io.embodit.dogmanners.ui.DogController
 import io.embodit.dogmanners.ui.Screen
@@ -53,18 +55,78 @@ object MainWindowStore {
     private val main = Handler(Looper.getMainLooper())
     private var recallPending = false
 
+    /** D9 (§7 item 9): opens wait for a level head; the Stage feeds it every frame ([stepGate]). */
+    val gate = LevelGate()
+
+    /** True while waiting on a tilted head: the Stage shows 「平视前方」 in the chip's slot. */
+    var levelHint by mutableStateOf(false)
+        private set
+    private var lastStepMs = 0L
+
     val isOpen: Boolean
         get() = state != "never" && state != "ON_DESTROY"
 
+    /** Asks for the window; it opens once the head is level (or the gate gives up waiting). */
     fun open(why: String) {
+        if (navigator == null) return
+        DogLog.i("WINDOW ask why=$why state=$state")
+        gate.ask(why, SystemClock.elapsedRealtime())
+        main.removeCallbacks(watchdog)
+        main.postDelayed(watchdog, 3000)
+    }
+
+    /** Every Stage frame: head pitch in degrees (+ up), null = no valid head pose. */
+    fun stepGate(now: Long, pitchDeg: Float?) {
+        lastStepMs = now
+        val hint = gate.hintWanted(pitchDeg)
+        if (hint != levelHint) {
+            levelHint = hint
+            DogLog.i(String.format(java.util.Locale.US, "LEVEL hint=%s pitch=%.1f", hint, pitchDeg ?: Float.NaN))
+        }
+        gate.step(now, pitchDeg)?.let {
+            levelHint = false
+            DogLog.i(String.format(java.util.Locale.US, "LEVEL ok pitch=%.1f -> open", pitchDeg ?: Float.NaN))
+            openNow(it)
+        }
+    }
+
+    /** The Stage has not run a frame (not up yet / in the background): never leave the window stuck. */
+    private val watchdog =
+        object : Runnable {
+            override fun run() {
+                if (!gate.waiting) return
+                val now = SystemClock.elapsedRealtime()
+                // on the headset the Stage's first frame comes ~6 s after the first ask: count from it, not the ask
+                val stalled = if (lastStepMs == 0L) gate.waitedMs(now) > 15_000 else now - lastStepMs > 3000
+                if (stalled) {
+                    val why = gate.pending!!
+                    gate.cancel()
+                    levelHint = false
+                    openNow("$why/noframes")
+                } else {
+                    main.postDelayed(this, 3000)
+                }
+            }
+        }
+
+    /** Exit / the Stage going away: no open pending. */
+    fun cancel() {
+        gate.cancel()
+        levelHint = false
+        main.removeCallbacks(watchdog)
+    }
+
+    private fun openNow(why: String) {
         val n = navigator ?: return
+        main.removeCallbacks(watchdog)
         DogLog.i("WINDOW open why=$why state=$state")
         runCatching { n.openWindowContainer(ID, TAG, null) }.onFailure { DogLog.e("WINDOW open failed: $it") }
     }
 
     /**
      * [回到面前]: an open window cannot be moved by code and a second open does not move it, so close it and open it
-     * again once it reported ON_DESTROY (an open right after a close is swallowed: native-window-move §3.5).
+     * again once it reported ON_DESTROY (an open right after a close is swallowed: native-window-move §3.5). The
+     * reopen goes through the level gate like every open.
      */
     fun recall() {
         val n = navigator ?: return

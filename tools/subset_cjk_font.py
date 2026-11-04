@@ -6,7 +6,7 @@ Re-run whenever the zh strings change:
     python tools/subset_cjk_font.py
 
 Input : C:\\Windows\\Fonts\\NotoSansSC-VF.ttf  (override with --source)
-Output: app/src/main/res/font/noto_sans_sc_subset.ttf  (the wght axis is kept)
+Output: app/src/main/res/font/noto_sans_sc_subset.ttf  (a variable source is pinned to --wght, default 500 = Medium)
         third_party/noto-sans-sc/OFL.txt + SUBSET.txt (what was included)
 
 Latin letters and digits are NOT taken from this font: Noto Sans (res/font/noto_sans_*.ttf) comes
@@ -140,6 +140,7 @@ def used_characters():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", default=r"C:\Windows\Fonts\NotoSansSC-VF.ttf")
+    ap.add_argument("--wght", type=float, default=500, help="pin a variable source to this weight (the app ships Medium); 0 keeps the axis")
     ap.add_argument("--out", default=os.path.join(ROOT, "app", "src", "main", "res", "font", "noto_sans_sc_subset.ttf"))
     args = ap.parse_args()
 
@@ -158,6 +159,10 @@ def main():
     subsetter = subset.Subsetter(options=options)
     subsetter.populate(unicodes=[ord(ch) for ch in present])
     subsetter.subset(font)
+    if args.wght and "fvar" in font:
+        from fontTools.varLib import instancer
+
+        font = instancer.instantiateVariableFont(font, {"wght": args.wght})
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     font.save(args.out)
 

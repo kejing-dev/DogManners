@@ -17,7 +17,6 @@ import java.util.Locale
  * One dog in the park. Entity tree (D25):
  *
  *     root    park-local: the floor point between its paws, turned by [yaw] (yaw 0 = facing +Z, towards you)
- *     |- blob soft dark disc on the ground under it
  *     `- calib   the ONE calibration node: file offset (paws -> origin), file rotation (identity: the file already looks
  *        |       along +Z, Y up), uniform scale (DogCalibration.size(lineup).scale); never touched after [attach]
  *        `- model  the GLB clone (its own transform is never written)
@@ -25,7 +24,7 @@ import java.util.Locale
  * Moving, turning and backing off only write [root]. The clip comes from [act] / [mood]; a change cross-fades in 0.4 s
  * (AnimationPlayConfig, design dogAsset.runtime).
  */
-internal class DogView(val name: String, val lineup: Lineup, parent: Entity, private val blobMaker: (Entity) -> Entity?) {
+internal class DogView(val name: String, val lineup: Lineup, parent: Entity) {
     val root: Entity = Entity().named("dog:$name")
     private val calib: Entity = Entity().named("calib:$name")
     private var model: Entity? = null
@@ -45,7 +44,6 @@ internal class DogView(val name: String, val lineup: Lineup, parent: Entity, pri
     init {
         parent.addChild(root)
         root.addChild(calib)
-        blobMaker(root)
         applyCalibration()
     }
 
@@ -65,6 +63,7 @@ internal class DogView(val name: String, val lineup: Lineup, parent: Entity, pri
         calib.addChild(clone)
         clone.enabled = true
         model = clone
+        clone.groundShadow(true, false) // contact shadow on the grass (v0.1.3, B24); the sun casts the long one
         val skinned = runCatching { clone.findSkinnedMeshEntity() }.getOrNull()?.firstOrNull()
         val carrier = skinned ?: clone
         val list = runCatching { carrier.getAnimationResources() }.getOrNull()?.toList().orEmpty()

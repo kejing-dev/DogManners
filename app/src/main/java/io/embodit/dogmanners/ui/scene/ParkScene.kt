@@ -14,8 +14,11 @@ import androidx.compose.ui.graphics.Color
 import com.pico.spatial.core.container.SpatialViewContent
 import com.pico.spatial.core.ecs.DirectionalLightComponent
 import com.pico.spatial.core.ecs.Entity
+import com.pico.spatial.core.ecs.ImageBasedLightSource
+import com.pico.spatial.core.ecs.LoadType
 import com.pico.spatial.core.ecs.ModelEntity
 import com.pico.spatial.core.ecs.SceneUpdateContext
+import com.pico.spatial.core.ecs.StageEnvironmentLightingComponent
 import com.pico.spatial.core.ecs.System
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.ecs.resource.MeshResource
@@ -30,6 +33,7 @@ import io.embodit.dogmanners.domain.Act
 import io.embodit.dogmanners.domain.BodyInput
 import io.embodit.dogmanners.domain.BodyReader
 import io.embodit.dogmanners.domain.HeadPose
+import io.embodit.dogmanners.domain.LevelGate
 import io.embodit.dogmanners.domain.Lineup
 import io.embodit.dogmanners.domain.Mode
 import io.embodit.dogmanners.domain.Mood
@@ -69,6 +73,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The scene of the open Stage (debug hooks and the frame system talk to it). Main thread only. */
 internal object ActiveScene {
@@ -132,8 +137,9 @@ class ParkScene {
     private var labelText = ""
     private var gazeLight: Entity? = null
     private var gazeLevel = 0f
-    private var blobMat: UnlitMaterial? = null
-    private var blobMesh: MeshResource? = null
+    // lights (v0.1.3, B24): the park IBL, the sun (casts shadows); debug `light ...` changes them live
+    private var envLight: StageEnvironmentLightingComponent? = null
+    private var sunLight: DirectionalLightComponent? = null
 
     // dogs
     private val templates = HashMap<String, Entity>()
@@ -231,34 +237,40 @@ class ParkScene {
         parkRoot = park
         park.enabled = false
         // sky: an inside-out sphere around you, unlit gradient
-        val sky = model(sh.keep(MeshResource.createSphere(SKY_R)), m.unlit(Color.White, m.texture(skyBitmap())), "sky", park)
+        val sky = model(sh.keep(MeshResource.createSphere(SKY_R)), m.unlit(Color.White, m.texture(skyBitmap())), "sky", park) // gate:allow geometry 天空穹顶：包住人四周的内翻球，只画天空渐变，不是可见物件
         sky.setLocal(scale = Vec3(-1f, 1f, 1f))
         frameDelay()
-        // sun + fill for the PBR park and the dog (Full Stage has no real-world light)
+        // v0.1.3 (B24): light = the park IBL (soft sky over a lawn, tools/make_ibl.py; the Stage's environment light, Full
+        // Stage) + one warm sun that casts shadows. No fill light and no emission: the sky fills the shadows.
+        val iblTex = runCatching { withContext(Dispatchers.IO) { TextureResource.load(IBL_ASSET, LoadType.FROM_ASSETS) } }
+            .onFailure { DogLog.e("LIGHT ibl $IBL_ASSET failed: $it") }.getOrNull()
+        if (iblTex != null) {
+            sh.keep(iblTex)
+            val env = StageEnvironmentLightingComponent(ImageBasedLightSource.Single(iblTex), IBL_EXP)
+            root.addChild(Entity().named("parkIbl").also { it.components.set(env) })
+            envLight = env
+        }
         val sun = Entity().named("sun")
-        sun.components.set(DirectionalLightComponent(Color4(1f, 0.96f, 0.9f, 1f), SUN_LUX, false))
+        val sunLight = DirectionalLightComponent(Color4(1f, 0.95f, 0.86f, 1f), SUN_LUX, true)
+        sun.components.set(sunLight)
+        this.sunLight = sunLight
         park.addChild(sun)
-        sun.setLocal(rotation = Quat4.fromTo(Vec3(0f, 0f, -1f), Vec3(-0.35f, -0.8f, -0.45f).normalized()))
-        val fill = Entity().named("fill")
-        fill.components.set(DirectionalLightComponent(Color4(0.85f, 0.9f, 1f, 1f), FILL_LUX, false))
-        park.addChild(fill)
-        fill.setLocal(rotation = Quat4.fromTo(Vec3(0f, 0f, -1f), Vec3(0.4f, -0.5f, 0.75f).normalized()))
+        sun.setLocal(rotation = Quat4.fromTo(Vec3(0f, 0f, -1f), SUN_DIR.normalized()))
+        DogLog.i(lightLine())
         val sf = Entity().named("shelf")
         root.addChild(sf)
         sf.enabled = false
         shelf = sf
-        blobMesh = sh.keep(Shapes.disc("blob"))
-        blobMat = m.sheer(Color.Black, 0.35f, m.texture(ParkMaterials.radial(64, 1.2)))
         // grass and path: painted, tileable textures (tools/make_park.py) on unit-UV tiles; plain grass beyond 20 m
-        model(sh.keep(Shapes.disc("ground", 64)), m.pbr(DogColors.Grass, 0.95f), "ground", park).setLocal(rotation = Quat4.axisAngle(Vec3.RIGHT, -(PI / 2).toFloat()), scale = Vec3(60f, 60f, 1f))
+        model(sh.keep(Shapes.disc("ground", 64)), m.pbr(DogColors.Grass, 0.95f), "ground", park).also { it.groundShadow(false, true) }.setLocal(rotation = Quat4.axisAngle(Vec3.RIGHT, -(PI / 2).toFloat()), scale = Vec3(60f, 60f, 1f))
         frameDelay()
         val grassTex = assetTexture("park/grass.jpg")
         val pathTex = assetTexture("park/path.jpg")
         val grass = if (grassTex != null) m.pbrTex(grassTex, 0.95f) else m.pbr(DogColors.Grass, 0.95f)
-        model(sh.keep(tiles(-20f, 20f, -20f, 20f, 2.5f, "grassTiles")), grass, "grass", park).setLocal(position = Vec3(0f, 0.002f, 0f))
+        model(sh.keep(tiles(-20f, 20f, -20f, 20f, 2.5f, "grassTiles")), grass, "grass", park).also { it.groundShadow(false, true) }.setLocal(position = Vec3(0f, 0.002f, 0f))
         frameDelay()
         val path = if (pathTex != null) m.pbrTex(pathTex, 0.9f) else m.pbr(DogColors.Path, 0.9f)
-        model(sh.keep(tiles(-0.65f, 0.65f, -27f, 3f, 1.3f, "pathTiles")), path, "path", park).setLocal(position = Vec3(0f, 0.006f, 0f))
+        model(sh.keep(tiles(-0.65f, 0.65f, -27f, 3f, 1.3f, "pathTiles")), path, "path", park).also { it.groundShadow(false, true) }.setLocal(position = Vec3(0f, 0.006f, 0f))
         frameDelay()
         val cube = sh.keep(Shapes.cube("cube"))
         val cyl = sh.keep(Shapes.cylinder("cyl"))
@@ -276,14 +288,14 @@ class ParkScene {
             tr.setLocal(position = Vec3(t.x, 0f, t.z), rotation = Quat4.axisAngle(Vec3.UP, i * 1.7f))
             val pm = if (i % 2 == 0) ParkModels.TREE_LINDEN else ParkModels.TREE_MAPLE
             if (propInstance(pm, tr, "tree$i") == null) primitiveTree(tr, i, t.y, cyl, ball, trunkMat, m)
-            groundShadow(tr, 1.6f, 1.6f)
+            tr.groundShadow(true, false)
             frameDelay()
         }
         for ((i, b) in BUSHES.withIndex()) {
             val bu = Entity().named("bush$i")
             park.addChild(bu)
             bu.setLocal(position = Vec3(b.x, 0f, b.z), rotation = Quat4.axisAngle(Vec3.UP, b.y))
-            if (propInstance(ParkModels.BUSH, bu, "bush$i") == null) bu.enabled = false else groundShadow(bu, 1.1f, 1.1f)
+            if (propInstance(ParkModels.BUSH, bu, "bush$i") == null) bu.enabled = false else bu.groundShadow(true, false)
         }
         // bench on the left, behind the window's line of sight
         val bench = Entity().named("bench")
@@ -294,7 +306,7 @@ class ParkScene {
             model(cube, trunkMat, "benchBack", bench).setLocal(position = Vec3(0f, 0.75f, -0.2f), scale = Vec3(1.5f, 0.35f, 0.05f))
             for (sx in listOf(-0.65f, 0.65f)) model(cube, trunkMat, "benchLeg", bench).setLocal(position = Vec3(sx, 0.22f, 0f), scale = Vec3(0.07f, 0.45f, 0.4f))
         }
-        groundShadow(bench, 1.6f, 0.7f)
+        bench.groundShadow(true, false)
         frameDelay()
         buildProps(park, m, cube, cyl, ball, trunkMat)
         frameDelay()
@@ -346,10 +358,10 @@ class ParkScene {
             model(ball, wm, "torso", o).setLocal(position = Vec3(0f, 1.28f, 0f), scale = Vec3(0.38f, 0.55f, 0.24f))
             model(ball, wm, "head", o).setLocal(position = Vec3(0f, 1.7f, 0f), scale = Vec3(0.2f, 0.25f, 0.21f))
         }
-        groundShadow(o, 0.6f, 0.45f)
         owner = o
         propEntities[Prop.OWNER] = o
         leash = model(cube, m.pbr(DogColors.Leash, 0.6f), "leash", park).also { it.enabled = false }
+        for (e in propEntities.values) e.groundShadow(true, false)
         for (e in propEntities.values) e.enabled = false
     }
 
@@ -399,11 +411,17 @@ class ParkScene {
         return String.format(Locale.US, "heightM=%.3f minY=%.3f opacityComponent=%s shown=%s", (b?.halfExtent?.y ?: 0f) * 2f, (b?.center?.y ?: 0f) - (b?.halfExtent?.y ?: 0f), opacity, p.enabled)
     }
 
-    /** Soft dark disc on the grass under a prop (the dogs have the same). */
-    private fun groundShadow(parent: Entity, w: Float, d: Float) {
-        val mesh = blobMesh ?: return
-        val mat = blobMat ?: return
-        model(mesh, mat, "shadow", parent).setLocal(position = Vec3(0f, 0.009f, 0f), rotation = Quat4.axisAngle(Vec3.RIGHT, -(PI / 2).toFloat()), scale = Vec3(w, d, 1f))
+    fun lightLine(): String =
+        String.format(Locale.US, "LIGHT ibl=%s exp=%.1f sun=%.0f lux shadows=%s", envLight != null, envLight?.intensityExponent ?: 0f, sunLight?.intensity ?: 0f, sunLight?.castsShadowEnabled)
+
+    /** Debug `light ibl EXP | sun LUX | shadows on|off`: tune the lights live (QA before / after shots). */
+    fun debugLight(what: String, arg: String): String {
+        when (what) {
+            "ibl" -> arg.toFloatOrNull()?.let { envLight?.intensityExponent = it.coerceIn(-24f, 24f) }
+            "sun" -> arg.toFloatOrNull()?.let { sunLight?.intensity = it.coerceAtLeast(0f) }
+            "shadows" -> sunLight?.castsShadowEnabled = arg == "on"
+        }
+        return lightLine().also { DogLog.i(it) }
     }
 
     private fun assetTexture(path: String): TextureResource? {
@@ -601,6 +619,10 @@ class ParkScene {
         }
         val rig = rig ?: return
         rig.onFrame(now)
+        // D9: a window open waits for a level head; meanwhile 「平视前方」 sits on your line of sight (chip slot)
+        val pitchDeg = if (hasHead && !head.lost(now)) Math.toDegrees(pose.pitch.toDouble()).toFloat() else null
+        MainWindowStore.stepGate(now, pitchDeg)
+        if (MainWindowStore.levelHint) showAt(PanelIds.CHIP, LevelGate.hintPosition(pose))
         rig.stowBehind(pose)
         if (!attached || paused) return
         val ui = DogController.state.value
@@ -747,7 +769,7 @@ class ParkScene {
         for (d in dogs) d.destroy()
         dogs.clear()
         for ((i, r) in sc.roles.withIndex()) {
-            val v = DogView("$i-${r.lineup.name.lowercase(Locale.US)}", r.lineup, layer) { parent -> makeBlob(parent, r.lineup) }
+            val v = DogView("$i-${r.lineup.name.lowercase(Locale.US)}", r.lineup, layer)
             val clone = cloneOf(r.lineup.asset) ?: return false
             v.attach(clone)
             v.position = Vec3(r.offsetX, 0f, -(r.startNoseM + v.size.noseZ))
@@ -769,13 +791,6 @@ class ParkScene {
         leash?.enabled = Prop.OWNER in sc.props
         DogLog.i("SCENE dogs=${dogs.map { it.name }} props=${sc.props} mode=${sc.mode}")
         return true
-    }
-
-    private fun makeBlob(parent: Entity, lineup: Lineup): Entity? {
-        val mesh = blobMesh ?: return null
-        val mat = blobMat ?: return null
-        val k = lineup.factor
-        return model(mesh, mat, "blob", parent).also { it.setLocal(position = Vec3(0f, 0.008f, 0.05f * k), rotation = Quat4.axisAngle(Vec3.RIGHT, -(PI / 2).toFloat()), scale = Vec3(0.55f * k, 0.95f * k, 1f)) }
     }
 
     /** Walks / backs off the main dog to the scenario's nose distance; 0.8 m hard minimum every frame (D14). */
@@ -854,7 +869,7 @@ class ParkScene {
         val d = dogs.firstOrNull()
         val inScene = ui.screen == Screen.LESSON || ui.screen == Screen.FREE || ui.screen == Screen.GUIDE
         if (d == null || !d.hasModel || !inScene || paused) {
-            snd.ambient(now, null)
+            snd.tick(now, null)
             return
         }
         val (h, f) = headLocal()
@@ -862,7 +877,7 @@ class ParkScene {
         val right = Vec3(-f.z, 0f, f.x)
         val pan = if (to.length > 1e-3f && right.length > 1e-3f) to.normalized().dot(right.normalized()) else 0f
         val sc = DogController.scenario
-        snd.ambient(now, Sound.DogCue(sc.act, dogMoving, BodyReader.flat(d.nose(), h), pan, Prop.FENCE in sc.props))
+        snd.tick(now, Sound.DogCue(sc.act, dogMoving, BodyReader.flat(d.nose(), h), pan, Prop.FENCE in sc.props))
     }
 
     private fun headInside(d: DogView, h: Vec3): Boolean {
@@ -931,7 +946,9 @@ class ParkScene {
         val rig = rig ?: return
         // the main window is a system window (placed by the system in front of you); only its reopen chip lives here,
         // where P1 used to be, and only while the window is closed (×)
-        if (!MainWindowStore.isOpen && MainWindowStore.state != "never") {
+        if (MainWindowStore.levelHint) {
+            // the chip's slot carries 「平视前方」 (placed every frame in onFrame)
+        } else if (!MainWindowStore.isOpen && MainWindowStore.state != "never" && !MainWindowStore.gate.waiting) {
             showAt(PanelIds.CHIP, f.toStage(PanelPlaces.local(PanelPlaces.P1_YAW_DEG, PanelPlaces.CHIP_DIST_M, PanelPlaces.CHIP_DOWN_DEG, eyeM)))
         } else {
             rig[PanelIds.CHIP]?.hide()
@@ -1045,7 +1062,11 @@ class ParkScene {
         private const val MEASURE_AFTER_MS = 1500L
         private const val SKY_R = 45f
         private const val SUN_LUX = 6000f
-        private const val FILL_LUX = 2600f
+        /** Sun from behind-left of the path, 53° high: the dog walking up the path is lit three-quarter, not flat. */
+        private val SUN_DIR = Vec3(-0.35f, -0.8f, -0.45f)
+        private const val IBL_ASSET = "park/park_ibl.ktx"
+        /** park_ibl.ktx is relative (sky ~1): 2^9 puts the sky light at ~1/6 of the sun, a clear summer day. */
+        private const val IBL_EXP = 9f
         const val FENCE_M = 1.2f
 
         /** Trees: x, height, z (park-local, metres); none within 1.6 m of the path's centre line. */

@@ -8,7 +8,10 @@ system Planar WindowContainer `DogMain` (900 × 760 dp) holds every 2D page (old
 pages switched by the system TabBar, moved / closed by the system caption bar (no drag code in the app). The system
 opens it straight ahead, so the park is turned instead: the path runs 38° right of where you look at placement (the
 design's P1-left-of-path angle). Stage attachment panels left: P2 signal tag (420 × 200 dp, follows the dog) and the
-[打开面板] chip (only while the window is closed). No network. Optional permission: `com.picovr.permission.EYE_TRACKING` (refused → head fallback, S4).
+[打开面板] chip (only while the window is closed). v0.1.3 (D9): every window open (first, chip, [回到面前]) waits in
+`domain/LevelGate` for a level head (|pitch| <= 10° for 300 ms; the chip's slot says 「平视前方 / 面板就出来」 on your line
+of sight meanwhile; no head 5 s / no Stage frames -> opens anyway). v0.1.3 (B24): no ambient sound; light = park IBL +
+one shadow-casting sun + ground contact shadows. No network. Optional permission: `com.picovr.permission.EYE_TRACKING` (refused → head fallback, S4).
 
 Design package (binding): `../../spatial-app-factory/apps/dog-manners/design-package.json` (states S1–S18, pressure
 model, stops, lessons, copy and `content.tone`). PRD https://claude.ai/artifact/AftooE5uEkbaK2eiqbyFNx, sample
@@ -48,7 +51,8 @@ app/src/debug/           DebugCommandReceiver + DebugCommands (QA hooks)
 app/src/main/assets/dogs dog_red.glb / dog_black_tan.glb / dog_cream.glb (built by tools/make_dog.py)
 app/src/main/assets/park owner / tree_linden / tree_maple / bush / bench / fence / bowl / bed .glb + grass.jpg / path.jpg
                          (tools/make_park.py from the Tripo raws in ../spatial-app-factory/apps/dog-manners/dogmodel/tripo-2026-11-03)
-app/src/main/assets/sound bed loop + pant / step0-3 / tags0-2 / sniff / shake / wuf / bark0-2 / voices0-1 / chime / bird
+                         + park_ibl.ktx (tools/make_ibl.py + ktx_ibl.py: the environment light, v0.1.3)
+app/src/main/assets/sound pant / step0-3 / tags0-2 / sniff / shake / wuf / chime: the dog's near sounds only (v0.1.3)
                          (tools/make_sounds.py; same gains as Sound.kt, checked by ParkV012Test)
 tools/                   make_dog.py + glbkit.py (clips keyframed on the file's skeleton, coats, anim-check renders),
                          strings_table.py (single source of copy -> res/values*/strings.xml), subset_cjk_font.py,
@@ -72,18 +76,28 @@ hear about it through `DogController.onSnapshot` when what they show changes (ne
 - Runtime check: `CALIB dog=... renderFactor=... earM=... lengthM=...` and `INSTANCE dog=... heightM=...
   opacityComponent=false` lines in the log once the first dog has played 1.5 s.
 
-## Park models and sounds (v0.1.2, profile B12)
+## Park models, light and sounds (v0.1.2 B12, v0.1.3 B24)
 
 ```bash
 python -I tools/make_park.py ../spatial-app-factory/apps/dog-manners/dogmodel/tripo-2026-11-03   # GLBs, textures, ParkModels.kt, renders
+python -I tools/make_ibl.py [preview.png]   # assets/park/park_ibl.ktx (sky + tree line + lawn, 256 px, 5 GGX levels, SH)
 python -I tools/make_sounds.py        # assets/sound + QA samples / level table / walk-up mix in ../spatial-app-factory/apps/dog-manners/qa
+python -I tools/subset_cjk_font.py --source <NotoSansSC-VF.ttf>   # after zh copy changes; pins the VF to wght 500 (Medium)
 ```
+
+Light (v0.1.3, headset 2026-11-04 「把环境光修复一下，让场景和狗看着更自然」): `StageEnvironmentLightingComponent` with
+park_ibl.ktx (exponent `IBL_EXP` 9; the KTX layout copies the SDK's own SystemIbl map: R11G11B10F cubemap, prefiltered
+mips, "sh" key) + one warm `DirectionalLightComponent` (6000 lux, `castsShadowEnabled`) + `GroundShadowComponent`
+(ground / grass / path receive, every tree / bush / bench / prop / dog mesh casts; it does not propagate, so
+`Entity.groundShadow` walks the children). Everything in the park is PBR without emission; Unlit is the sky dome and
+the overlays only. v0.1.2 had a second fill light, 38 % emission on the ground and path, and dark blob discs.
 
 Every model is Tripo text-to-3D in the user's own account (task ids in the factory deviations), one calibration root
 node baked in (floor centre on the origin, face +Z, metres), OPAQUE, metallic 0. Logs: `MODEL park/... loaded`,
 `INSTANCE prop=... heightM=... opacityComponent=false`; a missing file logs `MODEL ... missing` and gets the old
-primitive stand-in. Sounds: the dog's are panned to its side and fade with distance; birds only every 20–40 s at
--29 dB and off with the 鸟叫 switch (settings, remembered).
+primitive stand-in. Sounds (v0.1.3): only the dog you meet, panned to its side and fading with distance, ~3 dB under
+v0.1.2; no bed loop, far barks, passers-by or birds, and no 鸟叫 switch. make_sounds.py still renders v0.1.2's ambience
+(DROPPED) so the random sequence, and every dog file, stays byte-identical.
 
 ## Build on kj-alienware (Windows, Git Bash)
 
@@ -129,8 +143,8 @@ the pressure, so the same transitions run as with a real body.
 | `lang zh|en|system` `sound on|off` `seated 0|1` `tag on|off` `resetProgress` | prefs (S17 / S18) |
 | `view DEG` | turn the park by DEG at re-placement (emulator camera cannot turn; the window stays where the system put it): `view 38` = the dog's path ahead, `view 0` back |
 | `ftest on|off` | F↑ test texture on the ground distance label, moved 3.2 m out ×3 so a level emulator camera sees it (D10) |
-| `birds on|off` | the 鸟叫 switch (same Ui.ToggleBirds) |
-| `panel open|recall|state` | open = the chip's Ui.OpenPanel; recall = the window part of [回到面前] (logs `WINDOW recall close` -> `ON_DESTROY` -> `WINDOW open`); state = the window's lifecycle |
+| `light ibl EXP` `light sun LUX` `light shadows on|off` | tune the v0.1.3 lights live; logs `LIGHT ibl=... exp=... sun=... shadows=...` |
+| `panel open|recall|state` | open = the chip's Ui.OpenPanel; recall = the window part of [回到面前] (logs `WINDOW recall close` -> `ON_DESTROY` -> `WINDOW ask` -> `LEVEL ok pitch=.. -> open` -> `WINDOW open`); state = the window's lifecycle. Head tilted > 10°: `LEVEL hint=true`, no window until level |
 | `label TEXT|off` `dump` `where` `pose` `panels` `instances` `bounds window|p2|chip` | screenshots / diagnostics; `bounds` logs every probed control's rect vs its panel (`BOUNDS ... inside=`) |
 
 ## Screenshot list (QA, design states)

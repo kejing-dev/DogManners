@@ -24,10 +24,11 @@ import io.embodit.dogmanners.ui.window.MainWindowStore
  *          + left) | eye off|on | dist M (dog nose distance) |
  *          pressure V (0..4) | dog wary|relaxed|play (input macros: wary = stare 1 + pressure 4; relaxed = stare 0,
  *          lean 0, yaw 60; play = relaxed + dist 1.3 -> it sniffs, then bows)
- * Prefs:   lang zh|en|system | sound on|off | birds on|off | seated 0|1 | tag on|off | resetProgress
+ * Prefs:   lang zh|en|system | sound on|off | seated 0|1 | tag on|off | resetProgress
  * Window:  panel open (= the chip's Ui.OpenPanel) | panel recall (= [回到面前]'s window part) | panel state
  * Shots:   view DEG (turn the park by DEG at re-placement; the window stays where the system put it: 38 = the dog's
- *          path straight ahead, 0 = back) | ftest on|off (F↑ on the ground label) | label TEXT | label off
+ *          path straight ahead, 0 = back) | ftest on|off (F↑ on the ground label) | label TEXT | label off |
+ *          light ibl EXP | light sun LUX | light shadows on|off (v0.1.3 lights, live; logs LIGHT ...)
  * Dump:    dump | where | panels | instances | pose | bounds window|p2|chip (every probed control's rect vs its panel)
  */
 object DebugCommands {
@@ -70,7 +71,6 @@ object DebugCommands {
                 }
                 "lang" -> ev(Ui.SetLang(when (arg) { "zh" -> Lang.ZH; "en" -> Lang.EN; else -> Lang.SYSTEM }))
                 "sound" -> { if ((arg == "on") != DogController.state.value.soundOn) ev(Ui.ToggleSound); "sound=${DogController.state.value.soundOn}" }
-                "birds" -> { if ((arg == "on") != DogController.state.value.birdsOn) ev(Ui.ToggleBirds); "birds=${DogController.state.value.birdsOn}" }
                 "panel" -> when (arg) {
                     "open" -> ev(Ui.OpenPanel)
                     "recall" -> { MainWindowStore.recall(); "recall state=${MainWindowStore.state}" }
@@ -80,7 +80,8 @@ object DebugCommands {
                 "tag" -> { if ((arg == "on") != DogController.state.value.tagOn) ev(Ui.ToggleTag); "tag=${DogController.state.value.tagOn}" }
                 "resetProgress" -> ev(Ui.ResetProgress)
                 "view" -> { scene?.debugViewYawDeg = arg.toFloatOrNull() ?: 0f; ev(Ui.Bring); "view=${scene?.debugViewYawDeg}" }
-                "ftest" -> { scene?.fTest = arg == "on"; "ftest=${scene?.fTest}" }
+                "light" -> scene?.debugLight(arg.substringBefore(' '), arg.substringAfter(' ', "")) ?: "no scene"
+                "ftest" ->{ scene?.fTest = arg == "on"; "ftest=${scene?.fTest}" }
                 "label" -> { DogController.debugLabel(if (arg == "off" || arg.isEmpty()) null else arg); "label=$arg" }
                 "dump" -> DogController.state.value.let { "state=${it.designState} screen=${it.screen} lesson=${it.lesson} snap=${it.snap} eye=${it.eye} act=${DogController.scenario.act} P=${DogController.scenario.pressure}" }
                 "where" -> scene?.where() ?: "no scene"

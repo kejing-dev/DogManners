@@ -42,7 +42,6 @@ sealed interface Ui {
     data object OpenSettings : Ui
     data class SetLang(val lang: Lang) : Ui
     data object ToggleSound : Ui
-    data object ToggleBirds : Ui
     data object Bring : Ui
     /** The Stage chip after the main window's ×. */
     data object OpenPanel : Ui
@@ -93,13 +92,12 @@ object DogController {
         appContext = context.applicationContext
         val s = Store(context.applicationContext)
         store = s
-        sound = Sound(context.applicationContext).also { it.on = s.soundOn; it.birdsOn = s.birdsOn; it.start() }
+        sound = Sound(context.applicationContext).also { it.on = s.soundOn; it.start() }
         val lang = runCatching { Lang.valueOf(s.lang) }.getOrDefault(Lang.SYSTEM)
         _state.value =
             DogUiState(
                 lang = lang,
                 soundOn = s.soundOn,
-                birdsOn = s.birdsOn,
                 seated = s.seated,
                 tagOn = s.tagOn,
                 completed = s.completed,
@@ -248,12 +246,6 @@ object DogController {
                 set("sound") { it.copy(soundOn = on) }
             }
             Ui.OpenPanel -> MainWindowStore.open("chip")
-            Ui.ToggleBirds -> {
-                val on = !s.birdsOn
-                store?.birdsOn = on
-                sound?.birdsOn = on
-                set("birds") { it.copy(birdsOn = on) }
-            }
             // the park is laid out again from where you look, and the main window is closed and opened in front of you
             // (a system window cannot be moved by code: native-window-move §3.5)
             Ui.Bring -> {
@@ -313,6 +305,7 @@ object DogController {
     /** D26 exit, the main window template's order: release, close the window and the Stage, remove the tasks, end. */
     private fun quit() {
         DogLog.i("EXIT confirmed")
+        MainWindowStore.cancel()
         val nav = MainWindowStore.navigator
         val c = appContext
         if (nav != null && c != null) {
