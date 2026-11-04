@@ -273,6 +273,47 @@ def render(tris, cols, view, size=640, title=""):
 
 # ------------------------------------------------------------------------------------------------- one model
 
+# props Tripo stood on edge: laid flat on their thinnest axis
+FLAT = {"bed"}
+# props squashed to a height (metres) in the same calibration node: the L4 dog sleeps on the bed, not in it
+SQUASH = {"bed": 0.16}
+
+
+def lay_flat(pts):
+    """Rotation taking the direction of least spread (PCA) onto +Y."""
+    c = pts - pts.mean(0)
+    w, v = np.linalg.eigh(c.T @ c)
+    n = v[:, 0]
+    if n[1] < 0:
+        n = -n
+    y = np.array([0.0, 1.0, 0.0])
+    axis = np.cross(n, y)
+    sa = np.linalg.norm(axis)
+    if sa < 1e-9:
+        return np.eye(3)
+    axis /= sa
+    ang = math.atan2(sa, float(n @ y))
+    k = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+    return np.eye(3) + math.sin(ang) * k + (1 - math.cos(ang)) * k @ k
+
+
+def quat_of(m):
+    """glTF quaternion [x, y, z, w] of a rotation matrix."""
+    tr = m[0, 0] + m[1, 1] + m[2, 2]
+    if tr > 0:
+        w = math.sqrt(1 + tr) / 2
+        return [(m[2, 1] - m[1, 2]) / (4 * w), (m[0, 2] - m[2, 0]) / (4 * w), (m[1, 0] - m[0, 1]) / (4 * w), w]
+    i = int(np.argmax([m[0, 0], m[1, 1], m[2, 2]]))
+    j, k = (i + 1) % 3, (i + 2) % 3
+    r = math.sqrt(1 + m[i, i] - m[j, j] - m[k, k])
+    q = [0.0, 0.0, 0.0, 0.0]
+    q[i] = r / 2
+    q[j] = (m[j, i] + m[i, j]) / (2 * r)
+    q[k] = (m[k, i] + m[i, k]) / (2 * r)
+    q[3] = (m[k, j] - m[j, k]) / (2 * r)
+    return q
+
+
 def process(name, spec, metrics):
     measure, metres, yaw, image_max, task = spec
     src = os.path.join(RAW, f"{name}.glb")
@@ -281,26 +322,29 @@ def process(name, spec, metrics):
         return None
     js, binc = glbkit.read_glb(src)
     tris, cols, keys = triangles(js, binc)
-    # turn the face onto +Z (about Y), then measure
+    # turn the face onto +Z (about Y), then measure; flat props (the dog bed) first lie down on their thinnest axis
     a = math.radians(yaw)
     rot = np.array([[math.cos(a), 0, math.sin(a)], [0, 1, 0], [-math.sin(a), 0, math.cos(a)]])
+    if name in FLAT:
+        rot = rot @ lay_flat(tris.reshape(-1, 3))
     tr = tris @ rot.T
     lo, hi = tr.reshape(-1, 3).min(0), tr.reshape(-1, 3).max(0)
     size = hi - lo
     s = metres / (size[1] if measure == "height" else max(size[0], size[2]))
     centre = np.array([(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2])
+    sv = np.array([s, SQUASH[name] / size[1] if name in SQUASH else s, s])
     hand = None
     new_indices = {}
     if name == "owner":
         # the leash: saturated red triangles; keep the loop round the hand, cut what hangs below it
-        red = (cols[:, 0] > 0.5) & (cols[:, 1] < 0.32) & (cols[:, 2] < 0.32) & (cols[:, 0] > cols[:, 1] * 2)
         ys = tr[:, :, 1].mean(1)
+        # below 1.1 m only: the lips are red too
+        red = (cols[:, 0] > 0.5) & (cols[:, 1] < 0.32) & (cols[:, 2] < 0.32) & (cols[:, 0] > cols[:, 1] * 2) & ((ys - lo[1]) * s < 1.1)
         if red.any():
             top = ys[red].max()
             loop = red & (ys > top - 0.11 / s)
             cut = red & (ys <= top - 0.11 / s)
             hp = tr[loop].reshape(-1, 3).mean(0)
-            hand = (hp - centre) * s
             k = 0
             for mi, pi, cnt in keys:
                 keep = ~cut[k:k + cnt]
@@ -309,12 +353,24 @@ def process(name, spec, metrics):
                 new_indices[(mi, pi)] = idx[keep].reshape(-1)
                 k += cnt
             tris, cols, tr = tris[~cut], cols[~cut], tr[~cut]
+            # measure again without the cut leash: floor centre and size of what is left
+            lo, hi = tr.reshape(-1, 3).min(0), tr.reshape(-1, 3).max(0)
+            size = hi - lo
+            s = metres / size[1]
+            sv = np.array([s, s, s])
+            centre = np.array([(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2])
+            hand = (hp - centre) * sv
             print(f"  owner: leash cut {int(cut.sum())} tris, loop {int(loop.sum())}, hand {np.round(hand, 3).tolist()}")
     # calibration root node: v' = s * R (v - centre')
-    q = [0.0, math.sin(a / 2), 0.0, math.cos(a / 2)]
-    t = (-centre * s).tolist()
+    q = quat_of(rot)
+    # the node's scale acts before its rotation, so a squash is applied on a child node after the rotation
+    t = (-centre * sv).tolist()
     roots = list(js["scenes"][js.get("scene", 0)]["nodes"])
-    js["nodes"].append({"name": f"calib:{name}", "children": roots, "translation": t, "rotation": q, "scale": [s, s, s]})
+    if name in SQUASH:
+        js["nodes"].append({"name": f"turn:{name}", "children": roots, "rotation": q})
+        js["nodes"].append({"name": f"calib:{name}", "children": [len(js["nodes"]) - 1], "translation": t, "scale": sv.tolist()})
+    else:
+        js["nodes"].append({"name": f"calib:{name}", "children": roots, "translation": t, "rotation": q, "scale": [s, s, s]})
     js["scenes"][js.get("scene", 0)]["nodes"] = [len(js["nodes"]) - 1]
     # rotation is applied before translation in glTF TRS: R(v) then +t, with t computed on the rotated centre
     for mat in js.get("materials", []):
@@ -329,7 +385,7 @@ def process(name, spec, metrics):
     os.makedirs(ASSETS, exist_ok=True)
     dst = os.path.join(ASSETS, f"{name}.glb")
     glbkit.write_glb(dst, js, binc2)
-    cal = (tr - centre) * s
+    cal = (tr - centre) * sv
     lo2, hi2 = cal.reshape(-1, 3).min(0), cal.reshape(-1, 3).max(0)
     m = {
         "asset": f"park/{name}.glb", "tripoTask": task, "measure": measure, "targetM": metres, "scale": s,

@@ -760,10 +760,12 @@ class ParkScene {
         for ((p, e) in propEntities) e.enabled = p in sc.props
         val mainDog = dogs.first()
         propEntities[Prop.BOWL]?.setLocal(position = mainDog.nose().let { Vec3(it.x + 0.08f, 0f, it.z) })
-        propEntities[Prop.MAT]?.setLocal(position = Vec3(mainDog.position.x, 0f, mainDog.position.z - 0.05f))
+        // the bed (0.16 m) sits 0.07 m into the grass, so the sleeping dog (L4) lies in its hollow, not inside the cushion
+        propEntities[Prop.MAT]?.setLocal(position = Vec3(mainDog.position.x, -0.07f, mainDog.position.z - 0.05f))
         propEntities[Prop.FENCE]?.setLocal(position = Vec3(0f, 0f, -FENCE_M))
         // owner on the dog's far side from the signal tag (P2 hangs at your right of the dog)
-        owner?.setLocal(position = Vec3(mainDog.position.x - 0.7f, 0f, mainDog.position.z - 0.35f), rotation = Quat4.axisAngle(Vec3.UP, 0.3f))
+        // turned 0.9 rad towards the dog: the leash leaves her right hand (ParkModels.OWNER_HAND) in front of her
+        owner?.setLocal(position = Vec3(mainDog.position.x - 0.7f, 0f, mainDog.position.z - 0.35f), rotation = Quat4.axisAngle(Vec3.UP, 0.9f))
         leash?.enabled = Prop.OWNER in sc.props
         DogLog.i("SCENE dogs=${dogs.map { it.name }} props=${sc.props} mode=${sc.mode}")
         return true

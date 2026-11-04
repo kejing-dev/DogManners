@@ -10,17 +10,17 @@ package io.embodit.dogmanners.domain
 object ParkModels {
     data class Model(val asset: String, val heightM: Float, val widthM: Float, val depthM: Float, val minY: Float, val centreX: Float, val centreZ: Float)
 
-    val OWNER = Model("park/owner.glb", 1.6800f, 1.6800f, 1.6800f, 0.0000f, 0.0000f, 0.0000f)
-    val TREE_LINDEN = Model("park/tree_linden.glb", 5.0000f, 5.0000f, 5.0000f, 0.0000f, 0.0000f, 0.0000f)
-    val TREE_MAPLE = Model("park/tree_maple.glb", 5.6000f, 5.6000f, 5.6000f, 0.0000f, 0.0000f, 0.0000f)
-    val BENCH = Model("park/bench.glb", 0.8600f, 0.8600f, 0.8600f, 0.0000f, 0.0000f, 0.0000f)
-    val FENCE = Model("park/fence.glb", 1.0000f, 1.0000f, 1.0000f, 0.0000f, 0.0000f, 0.0000f)
-    val BOWL = Model("park/bowl.glb", 0.1040f, 0.2600f, 0.2600f, 0.0000f, 0.0000f, 0.0000f)
-    val BED = Model("park/bed.glb", 0.4000f, 1.0000f, 1.0000f, 0.0000f, 0.0000f, 0.0000f)
-    val BUSH = Model("park/bush.glb", 0.9500f, 0.9500f, 0.9500f, 0.0000f, 0.0000f, 0.0000f)
+    val OWNER = Model("park/owner.glb", 1.6800f, 0.5418f, 0.3146f, 0.0000f, 0.0000f, 0.0000f)
+    val TREE_LINDEN = Model("park/tree_linden.glb", 5.0000f, 4.2591f, 3.9215f, 0.0000f, 0.0000f, 0.0000f)
+    val TREE_MAPLE = Model("park/tree_maple.glb", 5.6000f, 5.1268f, 5.0651f, 0.0000f, 0.0000f, 0.0000f)
+    val BENCH = Model("park/bench.glb", 0.8600f, 1.2502f, 0.5871f, 0.0000f, 0.0000f, 0.0000f)
+    val FENCE = Model("park/fence.glb", 1.0000f, 2.1942f, 0.3972f, 0.0000f, 0.0000f, 0.0000f)
+    val BOWL = Model("park/bowl.glb", 0.0838f, 0.2598f, 0.2600f, 0.0000f, 0.0000f, 0.0000f)
+    val BED = Model("park/bed.glb", 0.1600f, 1.0000f, 0.9999f, 0.0000f, 0.0000f, -0.0000f)
+    val BUSH = Model("park/bush.glb", 0.9500f, 1.2952f, 1.2997f, 0.0000f, 0.0000f, 0.0000f)
 
     /** The owner's right hand (the leash loop), model space after calibration, metres. */
-    val OWNER_HAND = Vec3(0.2200f, 0.8000f, 0.0200f)
+    val OWNER_HAND = Vec3(-0.2165f, 0.7437f, 0.0409f)
 
     val ALL = listOf(OWNER, TREE_LINDEN, TREE_MAPLE, BENCH, FENCE, BOWL, BED, BUSH)
 }
