@@ -6,7 +6,7 @@ lod = 4 * r * (2 - r) for perceptual roughness r), "sh" = the diffuse part as th
 
 The sky has no sun disc: the sun is the scene's DirectionalLightComponent (it casts the shadows); the map is the
 sky light around it. Azimuth only adds a soft tree line, so the map needs no rotation when the park is turned.
-Values are relative (sky ~1); the brightness is StageEnvironmentLightingComponent's exponent (ParkScene.IBL_EXP).
+Values are relative (sky ~1); the brightness is StageEnvironmentLightingComponent's exponent (ParkScene.IBL_EXP, 10).
 
   python -I tools/make_ibl.py [PREVIEW_PNG]
 """

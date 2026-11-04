@@ -1061,12 +1061,13 @@ class ParkScene {
         private const val RESETTLE_MS = 2000L
         private const val MEASURE_AFTER_MS = 1500L
         private const val SKY_R = 45f
-        private const val SUN_LUX = 6000f
+        /** v0.1.3 tuned on emulator-5556 with `light ...` (build/v013/tune): 8000 lux + IBL 2^10 = clear afternoon. */
+        private const val SUN_LUX = 8000f
         /** Sun from behind-left of the path, 53° high: the dog walking up the path is lit three-quarter, not flat. */
         private val SUN_DIR = Vec3(-0.35f, -0.8f, -0.45f)
         private const val IBL_ASSET = "park/park_ibl.ktx"
-        /** park_ibl.ktx is relative (sky ~1): 2^9 puts the sky light at ~1/6 of the sun, a clear summer day. */
-        private const val IBL_EXP = 9f
+        /** park_ibl.ktx is relative (sky ~1); 2^9 looked like dusk without v0.1.2's emission, 2^11 washed out. */
+        private const val IBL_EXP = 10f
         const val FENCE_M = 1.2f
 
         /** Trees: x, height, z (park-local, metres); none within 1.6 m of the path's centre line. */

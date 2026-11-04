@@ -86,11 +86,13 @@ python -I tools/subset_cjk_font.py --source <NotoSansSC-VF.ttf>   # after zh cop
 ```
 
 Light (v0.1.3, headset 2026-11-04 「把环境光修复一下，让场景和狗看着更自然」): `StageEnvironmentLightingComponent` with
-park_ibl.ktx (exponent `IBL_EXP` 9; the KTX layout copies the SDK's own SystemIbl map: R11G11B10F cubemap, prefiltered
-mips, "sh" key) + one warm `DirectionalLightComponent` (6000 lux, `castsShadowEnabled`) + `GroundShadowComponent`
+park_ibl.ktx (exponent `IBL_EXP` 10; the KTX layout copies the SDK's own SystemIbl map: R11G11B10F cubemap, prefiltered
+mips, "sh" key) + one warm `DirectionalLightComponent` (8000 lux, `castsShadowEnabled`) + `GroundShadowComponent`
 (ground / grass / path receive, every tree / bush / bench / prop / dog mesh casts; it does not propagate, so
 `Entity.groundShadow` walks the children). Everything in the park is PBR without emission; Unlit is the sky dome and
-the overlays only. v0.1.2 had a second fill light, 38 % emission on the ground and path, and dark blob discs.
+the overlays only. v0.1.2 had a second fill light, 38 % emission on the ground and path, and dark blob discs. Before / after shots
+(same angles, emulator): `../spatial-app-factory/apps/dog-manners/build/v013/` (`shots.sh OUTDIR SERIAL`: frames via
+`adb emu screenrecord screenshot`, because `screencap` is half black / stale on a minimised emulator).
 
 Every model is Tripo text-to-3D in the user's own account (task ids in the factory deviations), one calibration root
 node baked in (floor centre on the origin, face +Z, metres), OPAQUE, metallic 0. Logs: `MODEL park/... loaded`,
