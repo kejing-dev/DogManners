@@ -6,8 +6,8 @@ platform/Sound.kt, mirrored in GAINS below). A QA mix of a dog walking up the pa
 
   python tools/make_sounds.py [QA_DIR]     # QA_DIR default ../spatial-app-factory/apps/dog-manners/qa
 
-Sounds written: pant, sniff, paw steps on the path (4), collar tags / bell (3), fur shake (with the tags), soft near
-"wuf" (L6), result chime. v0.1.2's park bed loop, far barks, passers-by and bird are still rendered (so the random
+Sounds written: pant, sniff, paw steps on the path (4), fur shake, soft near "wuf" (L6). No collar tags / bell and no
+result chime (headset 2026-11-04 「删掉那个叮当声音」). v0.1.2's park bed loop, far barks, passers-by and bird are still rendered (so the random
 sequence, and with it every dog file, stays the same) but no longer written: headset 2026-11-04 "不需要环境背景音".
 """
 import os
@@ -25,10 +25,10 @@ OUT = os.path.join(HERE, "..", "app", "src", "main", "assets", "sound")
 
 # playback gains used by platform/Sound.kt (linear, applied to the -1 dBFS files)
 GAINS = {
-    "pant": 0.35, "sniff": 0.32, "step": 0.28, "tags": 0.17, "shake": 0.32, "wuf": 0.18, "chime": 0.32,
+    "pant": 0.35, "sniff": 0.32, "step": 0.28, "shake": 0.32, "wuf": 0.18,
 }
 # v0.1.2's ambience, rendered for the random sequence only (see the docstring)
-DROPPED = {"bed", "bark0", "bark1", "bark2", "voices0", "voices1", "bird"}
+DROPPED = {"bed", "bark0", "bark1", "bark2", "voices0", "voices1", "bird", "tags0", "tags1", "tags2", "chime"}
 
 
 # ------------------------------------------------------------------------------------------------- helpers
@@ -367,7 +367,8 @@ def tags(variant):
 
 
 def shake():
-    """Fur shake: fast rustle that slows down, with the tags rattling."""
+    """Fur shake: fast rustle that slows down. v0.1.3: no tag rattle (headset 2026-11-04 「删掉那个叮当声音」); the
+    tags are still rendered so the random sequence, and every later file, stays the same."""
     dur = 1.1
     n = secs(dur)
     tt = t_(n)
@@ -379,8 +380,8 @@ def shake():
     out = np.concatenate([fur, np.zeros(secs(0.5))])
     for k in range(int(dur * 7)):
         if rng.random() < 0.8:
-            tg = tags(k)
-            put(out, k / 7 + rng.uniform(0, 0.03), tg / (np.max(np.abs(tg)) + 1e-9), 0.35)
+            tags(k)
+            rng.uniform(0, 0.03)
     return distance(out, 1.3, IR_NEAR)
 
 
@@ -477,8 +478,6 @@ def qa_mix(snd, dur=32.0):
         d = 8 - (8 - 1.3) * t / 9
         g = min(1.0, 1.3 / d)
         put(mix, t, snd[f"step{k % 4}"], GAINS["step"] * g)
-        if k % 3 == 0:
-            put(mix, t + 0.01, snd[f"tags{k % 3}"], GAINS["tags"] * g)
         t += 0.27 * rng.uniform(0.92, 1.08)
         k += 1
     # waits and pants (9..20 s)
@@ -493,7 +492,6 @@ def qa_mix(snd, dur=32.0):
     while t < dur:
         put(mix, t, snd["pant"], GAINS["pant"])
         t += len(snd["pant"]) / SR + 0.3
-    put(mix, 30.5, snd["chime"], GAINS["chime"])
     return mix[:n]
 
 
@@ -527,7 +525,7 @@ def main():
         m *= PEAK / np.max(np.abs(m))
     write(os.path.join(qa, name), m)
     rows.append((name, len(m) / SR, db(np.max(np.abs(m))), db(np.sqrt(np.mean(m ** 2))), 0, db(np.max(np.abs(m))), db(np.sqrt(np.mean(m ** 2)))))
-    spectrogram_png(m, os.path.join(qa, "dog-v013-walkup-spectrogram.png"), "v0.1.3 walk-up mix, dog only: steps+tags 0-9 s, pant 9-20 s, sniff 20-22 s, shake 24 s, chime 30.5 s")
+    spectrogram_png(m, os.path.join(qa, "dog-v013-walkup-spectrogram.png"), "v0.1.3 walk-up mix, dog only: steps 0-9 s, pant 9-20 s, sniff 20-22 s, shake 24 s (no tags, no chime)")
     sd = os.path.join(qa, "sounds-v013")
     os.makedirs(sd, exist_ok=True)
     for k, v in snd.items():

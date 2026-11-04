@@ -52,7 +52,7 @@ app/src/main/assets/dogs dog_red.glb / dog_black_tan.glb / dog_cream.glb (built 
 app/src/main/assets/park owner / tree_linden / tree_maple / bush / bench / fence / bowl / bed .glb + grass.jpg / path.jpg
                          (tools/make_park.py from the Tripo raws in ../spatial-app-factory/apps/dog-manners/dogmodel/tripo-2026-11-03)
                          + park_ibl.ktx (tools/make_ibl.py + ktx_ibl.py: the environment light, v0.1.3)
-app/src/main/assets/sound pant / step0-3 / tags0-2 / sniff / shake / wuf / chime: the dog's near sounds only (v0.1.3)
+app/src/main/assets/sound pant / step0-3 / sniff / shake / wuf: the dog's near sounds only (v0.1.3; no tags jingle, no chime)
                          (tools/make_sounds.py; same gains as Sound.kt, checked by ParkV012Test)
 tools/                   make_dog.py + glbkit.py (clips keyframed on the file's skeleton, coats, anim-check renders),
                          strings_table.py (single source of copy -> res/values*/strings.xml), subset_cjk_font.py,
@@ -98,7 +98,8 @@ Every model is Tripo text-to-3D in the user's own account (task ids in the facto
 node baked in (floor centre on the origin, face +Z, metres), OPAQUE, metallic 0. Logs: `MODEL park/... loaded`,
 `INSTANCE prop=... heightM=... opacityComponent=false`; a missing file logs `MODEL ... missing` and gets the old
 primitive stand-in. Sounds (v0.1.3): only the dog you meet, panned to its side and fading with distance, ~3 dB under
-v0.1.2; no bed loop, far barks, passers-by or birds, and no 鸟叫 switch. make_sounds.py still renders v0.1.2's ambience
+v0.1.2; no bed loop, far barks, passers-by or birds, and no 鸟叫 switch; no collar tags / bell jingle (steps or shake) and
+no result chime (headset 2026-11-04 「删掉那个叮当声音」). make_sounds.py still renders v0.1.2's ambience
 (DROPPED) so the random sequence, and every dog file, stays byte-identical.
 
 ## Build on kj-alienware (Windows, Git Bash)

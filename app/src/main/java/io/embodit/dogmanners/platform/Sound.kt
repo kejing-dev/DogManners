@@ -15,10 +15,10 @@ import kotlin.math.sqrt
  * the gains here set the loudness, same table as GAINS there).
  *
  * v0.1.3 (profile B24, headset 2026-11-04 "不需要环境背景音，现在吵死了"): no ambient bed, no far barks, passers-by or
- * birds. Only the dog you meet, near-field and panned to where it is: paw steps on the path + collar tags while it walks,
- * panting while it waits or plays (mouth shut = no pant while wary), sniffing, a fur shake with the tags, one soft "wuf"
- * when it guards the fence (L6); plus the result chime. Everything ~3 dB under v0.1.2. Mute is the P1 switch
- * (remembered, D15).
+ * birds. Only the dog you meet, near-field and panned to where it is: paw steps on the path while it walks,
+ * panting while it waits or plays (mouth shut = no pant while wary), sniffing, a fur shake, one soft "wuf" when it guards
+ * the fence (L6). Everything ~3 dB under v0.1.2. Also v0.1.3 (headset 「删掉那个叮当声音」): no collar tags / bell
+ * jingle (not with the steps, not in the shake) and no result chime. Mute is the P1 switch (remembered, D15).
  */
 class Sound(private val context: Context) {
     private var pool: SoundPool? = null
@@ -78,8 +78,6 @@ class Sound(private val context: Context) {
         p.play(id, l.coerceIn(0f, 1f), r.coerceIn(0f, 1f), 1, 0, rate)
     }
 
-    fun chime() = play("chime", GAIN_CHIME)
-
     /**
      * Called every frame from the scene. [dog] is null outside a scene with a dog. Steps follow the walk, the pant
      * runs while the dog waits / plays with its mouth open. Nothing plays without a dog (B24: no ambient).
@@ -102,7 +100,6 @@ class Sound(private val context: Context) {
             val trot = act == Act.LEAVE || act == Act.PLAY
             nextStepMs = now + (if (trot) 210L else 270L) + rnd.nextInt(40)
             play("step${stepN % 4}", GAIN_STEP * near, d.pan, 0.95f + 0.1f * rnd.nextFloat())
-            if (stepN % 3 == 0) play("tags${rnd.nextInt(3)}", GAIN_TAGS * near, d.pan, 0.97f + 0.06f * rnd.nextFloat())
             stepN++
         }
         val panting = act == Act.WAIT || act == Act.APPROACH || act == Act.PLAY || act == Act.SIT
@@ -121,10 +118,8 @@ class Sound(private val context: Context) {
         const val GAIN_PANT = 0.35f
         const val GAIN_SNIFF = 0.32f
         const val GAIN_STEP = 0.28f
-        const val GAIN_TAGS = 0.17f
         const val GAIN_SHAKE = 0.32f
         const val GAIN_WUF = 0.18f
-        const val GAIN_CHIME = 0.32f
         private const val PANT_MS = 2150L
         private val SQRT2 = sqrt(2f)
     }

@@ -146,7 +146,6 @@ object DogController {
         set("snap") { it.copy(snap = snap) }
         if (snap.near != null && snap.near != before?.near) DogLog.i("LENIENT lesson=${_state.value.lesson} near=${snap.near.cause} loosened=${snap.near.loosened} level=${snap.near.level}")
         if (snap.outcome != null && before?.outcome == null) {
-            sound?.chime()
             val id = _state.value.lesson
             if (snap.outcome == Outcome.OK && id != null) {
                 val done = _state.value.completed + id.n

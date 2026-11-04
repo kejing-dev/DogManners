@@ -73,19 +73,20 @@ class ParkV012Test {
             assertTrue("Sound.kt has GAIN_${k.uppercase()}", m != null)
             assertEquals("gain $k", v, m!!.groupValues[1].toFloat(), 1e-6f)
         }
-        // v0.1.3 (B24): only the dog's near sounds + the chime, every one at least 2.5 dB under v0.1.2
-        val v012 = mapOf("pant" to 0.50f, "sniff" to 0.45f, "step" to 0.40f, "tags" to 0.24f, "shake" to 0.45f, "wuf" to 0.25f, "chime" to 0.45f)
+        // v0.1.3 (B24): only the dog's near sounds, every one at least 2.5 dB under v0.1.2; no tags jingle, no chime
+        val v012 = mapOf("pant" to 0.50f, "sniff" to 0.45f, "step" to 0.40f, "shake" to 0.45f, "wuf" to 0.25f)
         assertEquals(v012.keys, gains.keys)
         for ((k, g) in v012) assertTrue("$k quieter", 20 * kotlin.math.log10(g / gains.getValue(k)) >= 2.5f)
-        for (k in listOf("bed", "bark", "voices", "bird")) assertTrue("no GAIN_${k.uppercase()}", !kt.contains("GAIN_${k.uppercase()}"))
+        for (k in listOf("bed", "bark", "voices", "bird", "tags", "chime")) assertTrue("no GAIN_${k.uppercase()}", !kt.contains("GAIN_${k.uppercase()}"))
     }
 
     @Test
     fun noAmbientFilesShip() {
         // B24: no bed loop, far barks, passers-by or birds in the APK; Sound has no looping track
+        // v0.1.3 headset 「删掉那个叮当声音」: no collar tags / bell, no chime
         val dir = (File("src/main/assets/sound").takeIf { it.isDirectory } ?: File("app/src/main/assets/sound"))
         val names = dir.list()!!.filter { it.endsWith(".wav") }.map { it.removeSuffix(".wav").trimEnd { c -> c.isDigit() } }.toSet()
-        assertEquals(setOf("pant", "sniff", "step", "tags", "shake", "wuf", "chime"), names)
+        assertEquals(setOf("pant", "sniff", "step", "shake", "wuf"), names)
         val kt = File(dir, "../../java/io/embodit/dogmanners/platform/Sound.kt").readText()
         assertTrue("no AudioTrack loop", !kt.contains("AudioTrack") && !kt.contains("setLoopPoints"))
     }
