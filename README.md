@@ -4,9 +4,6 @@
 
 | 会话 | 标题 | 行数 |
 |---|---|---|
-| `5cd4b613` | 子代理 · Spatial app factory | 178 |
-| `5cd4b613` | 子代理 · Spatial app factory | 1949 |
-| `5cd4b613` | 子代理 · Spatial app factory | 1078 |
-| `5cd4b613` | 子代理 · Spatial app factory | 677 |
-| `5cd4b613` | 子代理 · Spatial app factory | 670 |
-| `5cd4b613` | 子代理 · Spatial app factory | 460 |
+| `5ca8c7f6` | 别盯着狗 研发站 #2：同风格人物 / 场景 + 狗的环境声 + 原生窗口 v0.1.2 | 1994 |
+| `4c3d5ba9` | 别盯着狗 研发站 #3：去背景音 + 自然光照 + 窗口等平视 v0.1.3 | 1558 |
+| `e870873b` | 别盯着狗 发布站 #1：v0.1.3 Vibe Lab 素材 + Release | 859 |
